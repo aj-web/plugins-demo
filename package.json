@@ -33,14 +33,15 @@
       "output": "dist"
     },
     "files": [
+      "config.json",
       "main.js",
       "ipcHandlers.js",
       "preload.js",
       "index.html",
       "load_plugins.js",
       "tracker_util.js",
-      "assets/**/*",
-      "utils/**/*"
+      "utils/**/*",
+      "assets/**/*"
     ],
     "extraResources": [
       {
@@ -59,8 +60,7 @@
           "arch": ["x64"]
         }
       ],
-      "artifactName": "${productName}-${version}-win64.${ext}",
-      "unpackedDirName": "${productName}-${version}"
+      "artifactName": "${productName}-${version}-win64.${ext}"
     },
     "mac": {
       "target": "dmg"

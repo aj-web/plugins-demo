@@ -3,34 +3,16 @@ const path = require('path');
 const fs = require('fs');
 const { fork } = require('child_process');
 const { BrowserWindow } = require('electron');
+const pathManager = require('./utils/path-manager');
 
 const pluginProcesses = new Map();
 const manifestCache = new Map(); // For caching manifest.json
-
-// 添加打包后的插件路径检测
-const getPluginsDir = () => {
-  // 开发环境：使用项目根目录的 plugins
-  const devPluginsDir = path.join(__dirname, 'plugins');
-  if (fs.existsSync(devPluginsDir)) {
-    return devPluginsDir;
-  }
-  
-  // 打包环境：使用 resources/plugins
-  const prodPluginsDir = path.join(process.resourcesPath, 'plugins');
-  if (fs.existsSync(prodPluginsDir)) {
-    return prodPluginsDir;
-  }
-  
-  return devPluginsDir; // 默认返回
-};
-
-const pluginsDir = getPluginsDir();
 
 async function getManifest(pluginName) {
   if (manifestCache.has(pluginName)) {
     return manifestCache.get(pluginName);
   }
-  const manifestPath = path.join(pluginsDir, pluginName, 'manifest.json');
+  const manifestPath = pathManager.getPluginManifestPath(pluginName);
   if (!fs.existsSync(manifestPath)) throw new Error('manifest.json not found');
   const manifestRaw = fs.readFileSync(manifestPath, 'utf-8');
   const manifest = JSON.parse(manifestRaw);
@@ -58,27 +40,17 @@ async function triggerEvent(pluginName, eventType, params = {}) {
   const data = { ...params, call: callData };
   let child = pluginProcesses.get(pluginName);
   if (!child) {
-    const pluginDir = path.join(pluginsDir, pluginName);
-    const entry = path.join(pluginDir, 'plugin_host.js');
+    const entry = pathManager.getPluginHostPath(pluginName);
     if (!fs.existsSync(entry)) {
       throw new Error('No plugin_host.js found');
     }
     
     // 设置 FFmpeg 路径环境变量
     const env = { ...process.env };
-    // 尝试找到 FFmpeg 可执行文件
-    const possibleFfmpegPaths = [
-      path.join(process.resourcesPath || '', 'ffmpeg.exe'),
-      path.join(__dirname, 'ffmpeg.exe'),
-      path.join(process.cwd(), 'ffmpeg.exe')
-    ];
-    
-    for (const ffmpegPath of possibleFfmpegPaths) {
-      if (fs.existsSync(ffmpegPath)) {
-        env.FFMPEG_PATH = ffmpegPath;
-        console.log('Found FFmpeg at:', ffmpegPath);
-        break;
-      }
+    const ffmpegPath = pathManager.getFfmpegPath();
+    if (ffmpegPath) {
+      env.FFMPEG_PATH = ffmpegPath;
+      console.log('Found FFmpeg at:', ffmpegPath);
     }
     
     child = fork(entry, [], { env });
@@ -98,20 +70,8 @@ async function triggerEvent(pluginName, eventType, params = {}) {
 }
 
 function setupIpcHandlers() {
-  ipcMain.handle('read-txt', async (event, filePath) => {
-    try {
-      const content = await fs.promises.readFile(filePath, 'utf-8');
-      return content;
-    } catch (e) {
-      return '读取失败: ' + e.message;
-    }
-  });
-
   ipcMain.handle('select-file', async () => {
-    const result = await dialog.showOpenDialog({
-      properties: ['openFile'],
-      filters: [ { name: 'Text Files', extensions: ['txt'] } ]
-    });
+    const result = await dialog.showOpenDialog({ properties: ['openFile'] });
     if (!result.canceled && result.filePaths.length > 0) {
       return result.filePaths[0];
     }
@@ -127,23 +87,14 @@ function setupIpcHandlers() {
   });
 
   ipcMain.handle('get-plugin-dirs', async () => {
-    const pluginsRoot = pluginsDir;
-    try {
-      const dirs = fs.readdirSync(pluginsRoot, { withFileTypes: true })
-        .filter(dirent => dirent.isDirectory())
-        .map(dirent => dirent.name);
-      return dirs;
-    } catch (e) {
-      return [];
-    }
+    return pathManager.getAvailablePlugins();
   });
 
   ipcMain.handle('start-plugin-process', async (event, pluginName) => {
     if (pluginProcesses.has(pluginName)) {
       return { success: true, pid: pluginProcesses.get(pluginName).pid };
     }
-    const pluginDir = path.join(pluginsDir, pluginName);
-    const entry = path.join(pluginDir, 'plugin_host.js');
+    const entry = pathManager.getPluginHostPath(pluginName);
     if (!fs.existsSync(entry)) {
       return { success: false, error: 'No plugin_host.js found' };
     }
@@ -181,24 +132,16 @@ function setupIpcHandlers() {
 
   ipcMain.handle('get-plugin-resource-path', async (event, pluginName) => {
     try {
-      // 检查开发环境
-      const devPluginPath = path.join(__dirname, 'plugins', pluginName);
-      if (fs.existsSync(devPluginPath)) {
-        return `./plugins/${pluginName}`;
-      }
-      
-      // 检查打包环境
-      const prodPluginPath = path.join(process.resourcesPath, 'plugins', pluginName);
-      if (fs.existsSync(prodPluginPath)) {
-        // 在打包环境中，我们需要返回一个特殊的协议路径
-        return `file://${prodPluginPath.replace(/\\/g, '/')}`;
-      }
-      
-      return null;
+      return pathManager.getPluginResourcePath(pluginName);
     } catch (error) {
       console.error('Error getting plugin resource path:', error);
       return null;
     }
+  });
+
+  // 新增：获取环境信息（用于调试）
+  ipcMain.handle('get-environment-info', async () => {
+    return pathManager.getEnvironmentInfo();
   });
 }
 

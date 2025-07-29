@@ -37,4 +37,7 @@ ffmpeg.zip
 # 插件临时文件
 plugins/*/node_modules/
 plugins/*/dist/
-plugins/*/build/ 
+plugins/*/build/
+
+# 测试文件
+tests/*

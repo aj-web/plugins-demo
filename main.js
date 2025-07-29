@@ -4,28 +4,13 @@ const fs = require('fs');
 const { fork } = require('child_process');
 const extract = require('extract-zip');
 const { setupIpcHandlers } = require('./ipcHandlers');
+const pathManager = require('./utils/path-manager');
+const TrackerUtil = require('./tracker_util');
 
-// 添加打包后的插件路径检测
-const getPluginsDir = () => {
-  // 开发环境：使用项目根目录的 plugins
-  const devPluginsDir = path.join(__dirname, 'plugins');
-  if (fs.existsSync(devPluginsDir)) {
-    return devPluginsDir;
-  }
-  
-  // 打包环境：使用 resources/plugins
-  const prodPluginsDir = path.join(process.resourcesPath, 'plugins');
-  if (fs.existsSync(prodPluginsDir)) {
-    return prodPluginsDir;
-  }
-  
-  return devPluginsDir; // 默认返回
-};
-
-const pluginsDir = getPluginsDir();
 let mainWindow = null;
+let tracker = null;
 
-console.log('CWD:', process.cwd(), 'pluginsDir:', pluginsDir);
+console.log('CWD:', process.cwd(), 'pluginsDir:', pathManager.getPluginsDir());
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
@@ -41,22 +26,18 @@ function createMainWindow() {
 }
 
 function scanPlugins() {
-  const files = fs.readdirSync(pluginsDir);
-  const plugins = [];
-  console.log('[scanPlugins] files:', files);
-  for (const file of files) {
-    const fullPath = path.join(pluginsDir, file);
-    if (fs.statSync(fullPath).isDirectory()) {
-      if (fs.existsSync(path.join(fullPath, 'plugin_host.js'))) {
-        plugins.push({ name: file, status: 'ready' });
-      }
-    }
-  }
-  console.log('[scanPlugins] plugins:', plugins);
-  return plugins;
+  return pathManager.getAvailablePlugins().map(pluginName => ({
+    name: pluginName,
+    status: 'ready'
+  }));
 }
 
 async function asyncUnzipAll(onUnzipDone) {
+  const pluginsDir = pathManager.getPluginsDir();
+  if (!fs.existsSync(pluginsDir)) {
+    return;
+  }
+  
   const files = fs.readdirSync(pluginsDir);
   console.log('[asyncUnzipAll] files:', files);
   for (const file of files) {
@@ -65,26 +46,57 @@ async function asyncUnzipAll(onUnzipDone) {
       const zipPath = path.join(pluginsDir, file);
       const destDir = path.join(pluginsDir, pluginName);
       if (!fs.existsSync(destDir)) {
-        extract(zipPath, { dir: destDir })
-          .then(() => {
-            if (mainWindow) {
-              mainWindow.webContents.send('plugin-unzipped', pluginName);
-            }
-            if (onUnzipDone) onUnzipDone(pluginName);
-          });
-  }
+        try {
+          await extract(zipPath, { dir: destDir });
+          if (mainWindow) {
+            mainWindow.webContents.send('plugin-unzipped', pluginName);
+          }
+          if (onUnzipDone) onUnzipDone(pluginName);
+        } catch (error) {
+          console.error(`Failed to extract ${file}:`, error);
+      }
+      }
     }
   }
 }
 
+function getConfigKey() {
+  // 从 config.json 读取 key
+  const configPath = path.join(__dirname, 'config.json');
+  if (fs.existsSync(configPath)) {
+    try {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      return config.key || '';
+    } catch (e) {
+      console.warn('读取 config.json 失败:', e);
+      return '';
+    }
+  }
+  return '';
+}
+
 function startApp() {
   console.log('[startApp] called');
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     console.log('[startApp] app ready');
+    // Tracker 登录上报
+    const key = getConfigKey();
+    tracker = new TrackerUtil();
+    global.tracker = tracker; // 全局挂载
+    if (key) {
+      try {
+        const loginResult = await tracker.login(key);
+        console.log('Tracker 登录成功:', loginResult);
+      } catch (e) {
+        console.warn('Tracker 登录失败:', e);
+      }
+    } else {
+      console.warn('未在 config.json 中找到 key，跳过 Tracker 登录');
+    }
     setupIpcHandlers();
     createMainWindow();
-    asyncUnzipAll();
-});
+    await asyncUnzipAll();
+  });
 }
 
 ipcMain.handle('get-plugins-status', async () => {

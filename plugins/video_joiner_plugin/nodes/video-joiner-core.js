@@ -40,6 +40,7 @@ exports.VideoJoinerCoreNode = void 0;
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
 const fluent_ffmpeg_1 = __importDefault(require("fluent-ffmpeg"));
+const { findLocalFfmpeg } = require('../utils/ffmpeg-locator');
 
 // 配置 FFmpeg 路径
 const ffmpeg = (0, fluent_ffmpeg_1.default)();
@@ -124,8 +125,13 @@ class VideoJoinerCoreNode {
             
             // 配置 FFmpeg 路径
             try {
-                if (process.env.FFMPEG_PATH) {
+                if (process.env.FFMPEG_PATH && fs.existsSync(process.env.FFMPEG_PATH)) {
                     ffmpeg.setFfmpegPath(process.env.FFMPEG_PATH);
+                } else {
+                    const localFfmpeg = findLocalFfmpeg();
+                    if (localFfmpeg) {
+                        ffmpeg.setFfmpegPath(localFfmpeg);
+                    }
                 }
                 const possibleFfmpegPath = path.join(process.resourcesPath || '', 'ffmpeg.exe');
                 if (fs.existsSync(possibleFfmpegPath)) {

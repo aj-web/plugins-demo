@@ -4,33 +4,22 @@ window.onload = async () => {
 
   // 获取插件页面路径（支持开发环境和打包环境）
   async function getPluginPaths(pluginName) {
-    // 开发环境路径
-    let htmlPath = `./plugins/${pluginName}/index.html`;
-    let jsPath = `./plugins/${pluginName}/renderer.js`;
-    
-    if (pluginName === 'video_joiner_plugin') {
-      htmlPath = `./plugins/${pluginName}/frontend/index.html`;
-      jsPath = `./plugins/${pluginName}/frontend/main.js`;
-    }
+    // 默认路径（开发环境）
+    let htmlPath = `./plugins/${pluginName}/frontend/index.html`;
+    let jsPath = `./plugins/${pluginName}/frontend/main.js`;
     
     // 打包环境路径 - 通过 IPC 获取正确的路径
     if (window.electronAPI && window.electronAPI.getPluginResourcePath) {
       try {
         const resourcePath = await window.electronAPI.getPluginResourcePath(pluginName);
         if (resourcePath) {
-          if (pluginName === 'video_joiner_plugin') {
-            htmlPath = `${resourcePath}/frontend/index.html`;
-            jsPath = `${resourcePath}/frontend/main.js`;
-          } else {
-            htmlPath = `${resourcePath}/index.html`;
-            jsPath = `${resourcePath}/renderer.js`;
-          }
+          htmlPath = `${resourcePath}/frontend/index.html`;
+          jsPath = `${resourcePath}/frontend/main.js`;
         }
       } catch (error) {
         console.error('Error getting plugin resource path:', error);
       }
     }
-    
     return { htmlPath, jsPath };
   }
 
