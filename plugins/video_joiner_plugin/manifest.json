@@ -1,0 +1,25 @@
+{
+  "id": "com.platform.video-joiner",
+  "name": "Video Joiner",
+  "version": "1.0.0",
+  "description": "专业的视频拼接插件，支持多格式视频文件的上传、编辑和拼接处理",
+  "author": "Video Joiner Team",
+  "events": [
+    {
+      "id": "analyze-folders",
+      "name": "分析文件夹",
+      "description": "分析文件夹，匹配前贴和正片",
+      "jsFile": "nodes/video-validator.js",
+      "class": "VideoValidatorNode",
+      "method": "analyzeFolders"
+    },
+    {
+      "id": "process-tasks",
+      "name": "处理任务",
+      "description": "处理视频拼接任务",
+      "jsFile": "nodes/video-joiner-core.js",
+      "class": "VideoJoinerCoreNode",
+      "method": "processTasks"
+    }
+  ]
+}

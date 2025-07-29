@@ -1,0 +1,85 @@
+{
+  "name": "plugins-demo",
+  "version": "0.2.0",
+  "description": "插件框架",
+  "main": "main.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "clean": "rimraf dist",
+    "build": "npm run clean && electron-builder",
+    "build-win": "npm run clean && electron-builder --win",
+    "build-mac": "npm run clean && electron-builder --mac",
+    "build-linux": "npm run clean && electron-builder --linux",
+    "build-all": "npm run clean && electron-builder -mwl",
+    "dist": "npm run clean && electron-builder --publish=never"
+  },
+  "devDependencies": {
+    "electron": "^37.2.3",
+    "electron-builder": "^26.0.12",
+    "rimraf": "^6.0.1"
+  },
+  "dependencies": {
+    "extract-zip": "^2.0.1",
+    "fluent-ffmpeg": "^2.1.3"
+  },
+  "build": {
+    "appId": "com.example.plugins-demo",
+    "productName": "优创客户端体验版",
+    "electronDownload": {
+      "mirror": "https://npmmirror.com/mirrors/electron/"
+    },
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "ipcHandlers.js",
+      "preload.js",
+      "index.html",
+      "load_plugins.js",
+      "tracker_util.js",
+      "assets/**/*",
+      "utils/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "plugins",
+        "to": "plugins"
+      },
+      {
+        "from": "ffmpeg.exe",
+        "to": "ffmpeg.exe"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "zip",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "${productName}-${version}-win64.${ext}",
+      "unpackedDirName": "${productName}-${version}"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage"
+    },
+    "nsis": {
+      "artifactName": "${productName} Setup ${version}.${ext}",
+      "oneClick": false
+    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://npmmirror.com/mirrors/nsis/"
+      }
+    ],
+    "compression": "maximum",
+    "removePackageScripts": true,
+    "removePackageKeywords": true
+  }
+}
