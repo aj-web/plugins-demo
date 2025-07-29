@@ -32,7 +32,6 @@ Thumbs.db
 .env.*.local
 
 # 下载的 FFmpeg（如果存在）
-ffmpeg.exe
 ffmpeg.zip
 
 # 插件临时文件
