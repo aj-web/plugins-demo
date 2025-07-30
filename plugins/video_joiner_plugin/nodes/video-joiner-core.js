@@ -27,7 +27,7 @@ var __importStar = (this && this.__importStar) || (function () {
     return function (mod) {
         if (mod && mod.__esModule) return mod;
         var result = {};
-        if (mod != null) for (var k of ownKeys(mod)) if (k !== "default") __createBinding(result, mod, k);
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
         __setModuleDefault(result, mod);
         return result;
     };
@@ -40,25 +40,27 @@ exports.VideoJoinerCoreNode = void 0;
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
 const fluent_ffmpeg_1 = __importDefault(require("fluent-ffmpeg"));
-const { findLocalFfmpeg } = require('../utils/ffmpeg-locator');
-
+const ffmpeg_locator_1 = require("../utils/ffmpeg-locator");
 // 配置 FFmpeg 路径
 const ffmpeg = (0, fluent_ffmpeg_1.default)();
-// 尝试设置 FFmpeg 路径（如果主框架提供了的话）
 try {
-    // 检查是否有主框架提供的 FFmpeg 路径
-    if (process.env.FFMPEG_PATH) {
+    if (process.env.FFMPEG_PATH && fs.existsSync(process.env.FFMPEG_PATH)) {
         ffmpeg.setFfmpegPath(process.env.FFMPEG_PATH);
     }
-    // 在打包环境中，FFmpeg 可能在 resources 目录下
+    else {
+        const localFfmpeg = (0, ffmpeg_locator_1.findLocalFfmpeg)();
+        if (localFfmpeg) {
+            ffmpeg.setFfmpegPath(localFfmpeg);
+        }
+    }
     const possibleFfmpegPath = path.join(process.resourcesPath || '', 'ffmpeg.exe');
     if (fs.existsSync(possibleFfmpegPath)) {
         ffmpeg.setFfmpegPath(possibleFfmpegPath);
     }
-} catch (error) {
+}
+catch (error) {
     console.warn('FFmpeg path configuration failed:', error.message);
 }
-
 class VideoJoinerCoreNode {
     /**
      * 批量处理任务
@@ -68,7 +70,6 @@ class VideoJoinerCoreNode {
         console.log('当前工作目录:', process.cwd());
         console.log('任务数量:', tasks.length);
         console.log('第一个任务示例:', JSON.stringify(tasks[0], null, 2));
-        
         const results = [];
         for (let i = 0; i < tasks.length; i++) {
             const task = tasks[i];
@@ -79,13 +80,10 @@ class VideoJoinerCoreNode {
                 outputPath: task.outputPath,
                 taskInfo: task.taskInfo
             });
-            
             // 检查文件是否存在
-            const fs = require('fs');
             console.log('v1Path 存在:', fs.existsSync(task.v1Path));
             console.log('v2Path 存在:', fs.existsSync(task.v2Path));
             console.log('outputPath 存在:', fs.existsSync(task.outputPath));
-            
             try {
                 const result = await this.joinTwoVideos(task.v1Path, task.v2Path, task.outputPath, task.taskInfo, i + 1, tasks.length);
                 results.push(result);
@@ -118,17 +116,15 @@ class VideoJoinerCoreNode {
         const mainExt = path.extname(v2Path);
         const newFilename = `${mainName}${mainExt}`;
         const resultPath = path.join(outputPath, newFilename);
-        
         return new Promise((resolve, reject) => {
             // 每次调用都创建新的 FFmpeg 实例，避免输入文件累积
             const ffmpeg = require('fluent-ffmpeg')();
-            
-            // 配置 FFmpeg 路径
             try {
                 if (process.env.FFMPEG_PATH && fs.existsSync(process.env.FFMPEG_PATH)) {
                     ffmpeg.setFfmpegPath(process.env.FFMPEG_PATH);
-                } else {
-                    const localFfmpeg = findLocalFfmpeg();
+                }
+                else {
+                    const localFfmpeg = (0, ffmpeg_locator_1.findLocalFfmpeg)();
                     if (localFfmpeg) {
                         ffmpeg.setFfmpegPath(localFfmpeg);
                     }
@@ -137,10 +133,10 @@ class VideoJoinerCoreNode {
                 if (fs.existsSync(possibleFfmpegPath)) {
                     ffmpeg.setFfmpegPath(possibleFfmpegPath);
                 }
-            } catch (error) {
+            }
+            catch (error) {
                 console.warn('FFmpeg path configuration failed:', error.message);
             }
-            
             ffmpeg
                 .input(v1Path)
                 .input(v2Path)

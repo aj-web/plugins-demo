@@ -43,7 +43,6 @@ class VideoValidatorNode {
      */
     analyzeFolders(baseDir) {
         const allFolders = fs.readdirSync(baseDir).filter(f => fs.statSync(path.join(baseDir, f)).isDirectory());
-        
         const introFoldersDict = {};
         const mainFoldersDict = {};
         for (const folder of allFolders) {
@@ -58,26 +57,20 @@ class VideoValidatorNode {
                     mainFoldersDict[parseInt(numbers[numbers.length - 1], 10)] = folder;
             }
         }
-        
-        
         const matchedPairs = [];
         for (const number of Object.keys(introFoldersDict).map(Number)) {
             if (mainFoldersDict[number]) {
                 matchedPairs.push({ number, intro: introFoldersDict[number], main: mainFoldersDict[number] });
             }
         }
-        
         const unmatchedIntro = Object.keys(introFoldersDict).map(Number).filter(n => !mainFoldersDict[n]).map(n => introFoldersDict[n]);
         const unmatchedMain = Object.keys(mainFoldersDict).map(Number).filter(n => !introFoldersDict[n]).map(n => mainFoldersDict[n]);
-        
         // 生成所有任务
         const allTasks = this.createTasks(baseDir, matchedPairs);
-        
         // 将任务分配到每个配对
         matchedPairs.forEach(pair => {
             pair.tasks = allTasks.filter(task => task.outputPath && task.outputPath.includes(pair.main));
         });
-        
         const result = {
             introFolders: Object.values(introFoldersDict),
             mainFolders: Object.values(mainFoldersDict),
@@ -85,69 +78,53 @@ class VideoValidatorNode {
             unmatchedIntro,
             unmatchedMain
         };
-        
         return result;
     }
     /**
      * 根据配对情况创建处理任务
      */
     createTasks(baseDir, matchedPairs) {
-        
         const videoPatterns = ['*.mp4', '*.avi', '*.mov', '*.mkv', '*.wmv', '*.flv'];
         const allTasks = [];
         for (const { number, intro, main } of matchedPairs) {
-            
             const introFolderPath = path.join(baseDir, intro);
             const mainFolderPath = path.join(baseDir, main);
-            
             // 获取视频文件
             let introVideos = [];
             let mainVideos = [];
             for (const pattern of videoPatterns) {
                 const introPattern = `${introFolderPath.replace(/\\/g, '/')}/${pattern}`;
                 const mainPattern = `${mainFolderPath.replace(/\\/g, '/')}/${pattern}`;
-
-                
                 const introMatches = glob.sync(introPattern);
                 const mainMatches = glob.sync(mainPattern);
-
-                
                 introVideos.push(...introMatches);
                 mainVideos.push(...mainMatches);
             }
-            
             if (!introVideos.length || !mainVideos.length) {
                 console.log('跳过此配对：缺少视频文件');
                 continue;
             }
-            
             // 创建结果文件夹
             const resultFolderName = `${main}结果`;
             const resultFolderPath = path.join(baseDir, resultFolderName);
-            
-            
             if (!fs.existsSync(resultFolderPath)) {
                 fs.mkdirSync(resultFolderPath);
             }
-            
             // 为每个正片视频配对前贴视频
             for (const mainVideo of mainVideos) {
                 const selectedIntro = introVideos[Math.floor(Math.random() * introVideos.length)];
                 const v1Path = selectedIntro;
                 const v2Path = mainVideo;
                 const taskInfo = `[${number}] ${path.basename(selectedIntro, path.extname(selectedIntro))}+${path.basename(mainVideo, path.extname(mainVideo))}`;
-                
                 console.log('创建任务:', {
                     v1Path,
                     v2Path,
                     outputPath: resultFolderPath,
                     taskInfo
                 });
-                
                 allTasks.push({ v1Path, v2Path, outputPath: resultFolderPath, taskInfo });
             }
         }
-        
         return allTasks;
     }
 }

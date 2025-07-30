@@ -32,34 +32,6 @@ function scanPlugins() {
   }));
 }
 
-async function asyncUnzipAll(onUnzipDone) {
-  const pluginsDir = pathManager.getPluginsDir();
-  if (!fs.existsSync(pluginsDir)) {
-    return;
-  }
-  
-  const files = fs.readdirSync(pluginsDir);
-  console.log('[asyncUnzipAll] files:', files);
-  for (const file of files) {
-    if (file.endsWith('.zip')) {
-      const pluginName = file.replace(/\.zip$/, '');
-      const zipPath = path.join(pluginsDir, file);
-      const destDir = path.join(pluginsDir, pluginName);
-      if (!fs.existsSync(destDir)) {
-        try {
-          await extract(zipPath, { dir: destDir });
-          if (mainWindow) {
-            mainWindow.webContents.send('plugin-unzipped', pluginName);
-          }
-          if (onUnzipDone) onUnzipDone(pluginName);
-        } catch (error) {
-          console.error(`Failed to extract ${file}:`, error);
-      }
-      }
-    }
-  }
-}
-
 function getConfigKey() {
   // 从 config.json 读取 key
   const configPath = path.join(__dirname, 'config.json');
@@ -95,7 +67,6 @@ function startApp() {
     }
     setupIpcHandlers();
     createMainWindow();
-    await asyncUnzipAll();
   });
 }
 

@@ -68,7 +68,8 @@
             setProgressLoading();
             startBtn.disabled = true;
             showBtnSpinner(true);
-            if (stopBtn) stopBtn.disabled = false;
+            if (stopBtn)
+                stopBtn.disabled = false;
             const result = await window.electronAPI.eventBus.trigger('process-tasks', { args: [allTasks] }, pluginName);
             console.log('frontend runBusiness finished, _isStopped:', window._isStopped);
             if (!window._isStopped) {
@@ -76,15 +77,18 @@
             }
             startBtn.disabled = false;
             showBtnSpinner(false);
-            if (stopBtn) stopBtn.disabled = true;
+            if (stopBtn)
+                stopBtn.disabled = true;
         };
     }
     if (window.electronAPI && window.electronAPI.onBusinessStopped) {
         window.electronAPI.onBusinessStopped(() => {
             window._isStopped = true;
-            if (startBtn) startBtn.disabled = false;
+            if (startBtn)
+                startBtn.disabled = false;
             showBtnSpinner(false);
-            if (stopBtn) stopBtn.disabled = true;
+            if (stopBtn)
+                stopBtn.disabled = true;
             alert('停止处理成功');
             console.log('frontend stopped received');
         });

@@ -1,59 +1,120 @@
-# Video Joiner Plugin
+# 插件开发者对接指南
 
-专业的视频拼接插件，支持多格式视频文件的上传、分析、拼接处理。基于 Electron 插件框架，前端与 Node 代码完全解耦，支持自动节点注册与单元测试。
+本指南面向所有希望为本平台开发插件的开发者，详细说明插件的目录结构、manifest.json规范、前端与主框架的对接方式，以及开发注意事项。
 
-## 项目结构
+---
+
+## 1. 插件目录结构规范
+
+每个插件应放置于APP的 `plugins/` 目录下的独立子目录，打包解压后推荐结构如下：
 
 ```
-video_joiner_plugin_new/
-├── manifest.json              # 插件描述与节点注册
-├── package.json               # 依赖与脚本
-├── README.md                  # 项目说明
-├── src/
-│   ├── docs/                  # 开发与API文档
-│   ├── frontend/              # 前端页面与入口(main.ts, index.html)
-│   ├── nodes/                 # 所有节点实现（每个节点一个文件）
-│   ├── scripts/               # 构建、开发、打包脚本
-│   ├── tests/                 # 单元测试
-│   ├── types/                 # TypeScript 类型定义
-│   └── utils/                 # 工具函数
-├── tsconfig.json              # TypeScript 配置
-├── webpack.config.js          # 前端构建配置
-└── ...
+plugins/
+  your_plugin_name/
+    manifest.json           # 插件元信息与事件声明
+    plugin_host.js          # 插件后端主进程入口（必需）
+    frontend/
+      index.html            # 插件前端页面（必需）
+      main.js               # 插件前端主逻辑（必需）
+    nodes/                  # 业务逻辑节点（可选，推荐）
+    utils/ types/ ...       # 其它自定义目录
+    node_modules/           # 插件私有依赖（推荐）
 ```
 
-## 快速开始
+---
 
-```bash
-npm install
-npm run dev         # 开发模式，自动构建前端
-npm run build       # 构建前端
-npm run package     # 打包为zip
-npm test            # 运行全部单元测试
+## 2. manifest.json 规范
+
+manifest.json 用于声明插件元信息和所有可对接的业务事件。示例：
+
+```json
+{
+  "id": "com.example.demo-plugin",
+  "name": "Demo Plugin",
+  "version": "1.0.0",
+  "description": "演示插件",
+  "author": "Your Name",
+  "events": [
+    {
+      "id": "analyze-folders",
+      "name": "分析文件夹",
+      "description": "分析文件夹业务",
+      "jsFile": "nodes/analyze.js",
+      "class": "AnalyzeNode",
+      "method": "analyzeFolders"
+    },
+    {
+      "id": "process-tasks",
+      "name": "处理任务",
+      "description": "处理任务业务",
+      "jsFile": "nodes/processor.js",
+      "class": "ProcessorNode",
+      "method": "processTasks"
+    }
+  ]
+}
+```
+- `events` 数组每一项声明一个可被主框架调用的业务事件。
+- 每个事件需指定 jsFile、class、method，主框架会自动路由。
+
+---
+
+## 3. 前端页面与主框架对接
+
+### 3.1 页面入口
+- 插件前端页面入口为 `frontend/index.html`，主框架会自动加载。
+- 主逻辑建议写在 `frontend/main.js`，并在 index.html 里通过 `<script src="main.js" data-plugin="your_plugin_name"></script>` 引入。
+
+### 3.2 事件调用方式
+- 通过 `window.electronAPI.eventBus.trigger(eventType, params, pluginName)` 调用主框架事件分发。
+- **pluginName 必须传递，建议通过 script 标签的 data-plugin 属性动态获取。**
+
+#### 示例：
+```js
+const pluginName = document.currentScript.getAttribute('data-plugin');
+const result = await window.electronAPI.eventBus.trigger('analyze-folders', { args: [folderPath] }, pluginName);
 ```
 
-## 插件开发思路
+### 3.3 典型业务流程
+1. 用户在前端页面选择文件夹/文件。
+2. 前端通过 eventBus.trigger 调用后端业务节点（如 analyze-folders）。
+3. 处理结果通过 Promise 返回，前端渲染到页面。
+4. 需要停止处理时，调用 `eventBus.trigger('stop-processing', {}, pluginName)`。
 
-- **前端**：只负责 UI 展示与参数收集，通过 `window.electronAPI` 与主进程通信。
-- **Node 业务**：所有节点代码仅在主进程/Node 环境下运行，前端绝不直接 import Node-only 模块。
-- **节点注册**：所有节点在 `manifest.json` 注册，主进程自动加载。
-- **测试**：每个节点配套单元测试，mock/真实实现可切换。
+---
 
-## 常用脚本说明
+## 4. 插件后端业务节点开发
 
-| 指令            | 说明                                 |
-|-----------------|--------------------------------------|
-| npm run dev     | 开发模式，自动构建前端               |
-| npm run build   | 构建前端到 dist                      |
-| npm run package | 打包 dist 目录为 zip                 |
-| npm run clean   | 清理 dist 目录                       |
-| npm run lint    | 代码风格检查                         |
-| npm test        | 运行全部单元测试                     |
+- 每个业务节点建议为一个 class，导出为 `module.exports = { YourClassName }`。
+- 必须与 manifest.json 里 class、method 保持一致。
+- 业务节点文件路径以插件目录为根（如 `nodes/your-node.js`）。
+- 支持异步方法（async/await）。
 
-## 详细开发规范
+---
 
-详见 [DEVELOPMENT.md](./src/docs/DEVELOPMENT.md)
+## 5. 与主框架通信注意事项
 
-## License
+- **所有业务事件必须在 manifest.json 里声明，未声明的事件无法被调用。**
+- pluginName 必须唯一，建议与目录名一致。
+- 插件依赖请放在插件自己的 node_modules 下，避免与主框架冲突。
+- 不要在 preload.js 里直接 require('fs') 等 Node.js API，所有文件操作应由主进程完成。
+- 前端与主进程通信统一通过 `window.electronAPI.eventBus.trigger`。
 
-MIT License
+---
+
+## 6. 常见问题与调试建议
+
+- 插件入口不显示：请检查 plugin_host.js 是否存在，目录名是否正确。
+- 事件调用无响应：请检查 manifest.json 事件声明、jsFile 路径、class/method 是否正确。
+- 控制台报错：请用 F12 打开开发者工具，查看详细报错信息。
+- 多插件并行：每个插件的 pluginName 必须唯一，事件调用时必须传递。
+
+---
+
+## 7. 参考示例
+
+请参考 `plugins/video_joiner_plugin` 目录下的完整实现。
+
+---
+
+如有更多问题，请联系主框架维护者或查阅平台文档。 
