@@ -36,14 +36,14 @@ function getConfigKey() {
   // 从 config.json 读取 key
   const configPath = path.join(__dirname, 'config.json');
   if (fs.existsSync(configPath)) {
-    try {
+        try {
       const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
       return config.key || '';
     } catch (e) {
       console.warn('读取 config.json 失败:', e);
       return '';
-    }
-  }
+      }
+      }
   return '';
 }
 
@@ -68,7 +68,7 @@ function startApp() {
     setupIpcHandlers();
     createMainWindow();
   });
-}
+  }
 
 ipcMain.handle('get-plugins-status', async () => {
   console.log('[ipcMain.handle] get-plugins-status called');

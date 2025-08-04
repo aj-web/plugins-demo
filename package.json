@@ -3,6 +3,7 @@
   "version": "0.2.0",
   "description": "插件框架",
   "main": "main.js",
+  "author": "优矩互动",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
@@ -26,6 +27,7 @@
   "build": {
     "appId": "com.example.plugins-demo",
     "productName": "优创客户端体验版",
+    "icon": "assets/icon.ico",
     "electronDownload": {
       "mirror": "https://npmmirror.com/mirrors/electron/"
     },
@@ -56,11 +58,12 @@
     "win": {
       "target": [
         {
-          "target": "zip",
+          "target": "nsis",
           "arch": ["x64"]
         }
       ],
-      "artifactName": "${productName}-${version}-win64.${ext}"
+      "artifactName": "${productName}-${version}-win64.${ext}",
+      "icon": "assets/icon.ico"
     },
     "mac": {
       "target": "dmg"
@@ -69,8 +72,16 @@
       "target": "AppImage"
     },
     "nsis": {
-      "artifactName": "${productName} Setup ${version}.${ext}",
-      "oneClick": false
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "优创客户端体验版",
+      "menuCategory": "优创客户端",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "deleteAppDataOnUninstall": false
     },
     "publish": [
       {
