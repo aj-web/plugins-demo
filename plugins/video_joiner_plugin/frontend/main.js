@@ -9,6 +9,7 @@
     })();
     const pluginName = 'video_joiner_plugin';
     let selectedFolder = '';
+    let selectedFolderIndex = -1;
     // 选择文件夹
     const selectFolderBtn = document.getElementById('select-folder-btn');
     if (selectFolderBtn) {
@@ -20,8 +21,15 @@
                 selectedFolder = await window.electronAPI.selectFile();
             }
             const currentDir = document.getElementById('current-dir');
-            if (currentDir)
-                currentDir.innerText = selectedFolder || '未选择';
+            if (currentDir) {
+                currentDir.innerText = selectedFolder || '未选择文件夹';
+                if (selectedFolder) {
+                    currentDir.style.color = '#1a1a1a';
+                }
+                else {
+                    currentDir.style.color = '#666';
+                }
+            }
         };
     }
     // 分析文件夹按钮
@@ -29,11 +37,25 @@
     if (analyzeBtn) {
         analyzeBtn.onclick = async () => {
             if (!selectedFolder) {
-                alert('请先选择文件夹');
+                showNotification('请先选择文件夹', 'warning');
                 return;
             }
-            const result = await window.electronAPI.eventBus.trigger('analyze-folders', { args: [selectedFolder] }, pluginName);
-            renderAnalyzeResult(result.result);
+            // 显示加载状态
+            analyzeBtn.disabled = true;
+            const originalText = analyzeBtn.innerHTML;
+            analyzeBtn.innerHTML = '<span class="spinner"></span> 分析中...';
+            try {
+                const result = await window.electronAPI.eventBus.trigger('analyze-folders', { args: [selectedFolder] }, pluginName);
+                renderAnalyzeResult(result.result);
+                showNotification('文件夹分析完成', 'success');
+            }
+            catch (error) {
+                showNotification('分析失败: ' + error, 'error');
+            }
+            finally {
+                analyzeBtn.disabled = false;
+                analyzeBtn.innerHTML = originalText;
+            }
         };
     }
     // 停止处理按钮
@@ -49,7 +71,7 @@
     if (startBtn) {
         startBtn.onclick = async () => {
             if (!selectedFolder) {
-                alert('请先选择文件夹');
+                showNotification('请先选择文件夹', 'warning');
                 return;
             }
             let allTasks = [];
@@ -61,7 +83,7 @@
                 });
             }
             if (allTasks.length === 0) {
-                alert('没有可处理的任务，请先分析文件夹！');
+                showNotification('没有可处理的任务，请先分析文件夹！', 'warning');
                 return;
             }
             window._isStopped = false;
@@ -70,15 +92,23 @@
             showBtnSpinner(true);
             if (stopBtn)
                 stopBtn.disabled = false;
-            const result = await window.electronAPI.eventBus.trigger('process-tasks', { args: [allTasks] }, pluginName);
-            console.log('frontend runBusiness finished, _isStopped:', window._isStopped);
-            if (!window._isStopped) {
-                setProgressDone();
+            try {
+                const result = await window.electronAPI.eventBus.trigger('process-tasks', { args: [allTasks] }, pluginName);
+                console.log('frontend runBusiness finished, _isStopped:', window._isStopped);
+                if (!window._isStopped) {
+                    setProgressDone();
+                    showNotification('处理完成！', 'success');
+                }
             }
-            startBtn.disabled = false;
-            showBtnSpinner(false);
-            if (stopBtn)
-                stopBtn.disabled = true;
+            catch (error) {
+                showNotification('处理失败: ' + error, 'error');
+            }
+            finally {
+                startBtn.disabled = false;
+                showBtnSpinner(false);
+                if (stopBtn)
+                    stopBtn.disabled = true;
+            }
         };
     }
     if (window.electronAPI && window.electronAPI.onBusinessStopped) {
@@ -89,7 +119,7 @@
             showBtnSpinner(false);
             if (stopBtn)
                 stopBtn.disabled = true;
-            alert('停止处理成功');
+            showNotification('停止处理成功', 'info');
             console.log('frontend stopped received');
         });
     }
@@ -97,57 +127,86 @@
         const progress = document.getElementById('progress-inner');
         if (progress) {
             progress.style.width = '60%';
-            progress.style.background = '#52c41a'; // 绿色
-            progress.innerHTML = '';
+            progress.style.background = 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)';
         }
         const statProgress = document.getElementById('stat-progress');
         if (statProgress)
-            statProgress.innerText = '总进度: 0/0';
+            statProgress.innerText = '0/0';
     }
     function setProgressDone() {
         const progress = document.getElementById('progress-inner');
         if (progress) {
             progress.style.width = '100%';
-            progress.style.background = '#52c41a'; // 绿色
-            progress.innerHTML = '';
+            progress.style.background = 'linear-gradient(90deg, #52c41a 0%, #389e0d 100%)';
         }
         const statProgress = document.getElementById('stat-progress');
         if (statProgress)
-            statProgress.innerText = '总进度: 100%';
+            statProgress.innerText = '100%';
     }
     function showBtnSpinner(show) {
         let spinner = document.getElementById('start-btn-spinner');
+        let text = document.getElementById('start-btn-text');
         if (show) {
             if (!spinner) {
                 spinner = document.createElement('span');
                 spinner.id = 'start-btn-spinner';
-                spinner.className = 'btn-spinner';
-                spinner.style.display = 'inline-block';
-                spinner.style.width = '16px';
-                spinner.style.height = '16px';
-                spinner.style.marginLeft = '6px';
-                spinner.style.border = '2px solid #e6f4ff';
-                spinner.style.borderTop = '2px solid #1890ff';
-                spinner.style.borderRadius = '50%';
-                spinner.style.animation = 'spin 1s linear infinite';
-                spinner.style.verticalAlign = 'middle';
+                spinner.className = 'spinner';
                 if (startBtn)
                     startBtn.appendChild(spinner);
             }
-            else {
-                spinner.style.display = 'inline-block';
-            }
-            // 添加全局spinner样式
-            if (!document.getElementById('global-spinner-style')) {
-                const style = document.createElement('style');
-                style.id = 'global-spinner-style';
-                style.innerHTML = `@keyframes spin{0%{transform:rotate(0deg);}100%{transform:rotate(360deg);}}`;
-                document.head.appendChild(style);
-            }
+            spinner.style.display = 'inline-block';
+            if (text)
+                text.innerText = '处理中...';
         }
-        else if (spinner) {
-            spinner.style.display = 'none';
+        else {
+            if (spinner)
+                spinner.style.display = 'none';
+            if (text)
+                text.innerText = '开始处理';
         }
+    }
+    // 显示通知
+    function showNotification(message, type = 'info') {
+        // 创建通知元素
+        const notification = document.createElement('div');
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+            font-weight: 500;
+            z-index: 1000;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+            max-width: 300px;
+            word-wrap: break-word;
+        `;
+        // 根据类型设置样式
+        const colors = {
+            success: '#52c41a',
+            error: '#ff4d4f',
+            warning: '#faad14',
+            info: '#1890ff'
+        };
+        notification.style.background = colors[type];
+        notification.textContent = message;
+        document.body.appendChild(notification);
+        // 显示动画
+        setTimeout(() => {
+            notification.style.transform = 'translateX(0)';
+        }, 100);
+        // 自动隐藏
+        setTimeout(() => {
+            notification.style.transform = 'translateX(100%)';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 300);
+        }, 3000);
     }
     // 渲染分析结果到页面
     function renderAnalyzeResult(result) {
@@ -157,32 +216,62 @@
         if (folderList) {
             let html = '';
             if (result.matchedPairs && result.matchedPairs.length > 0) {
-                html += result.matchedPairs.map((pair, idx) => `<div class="pair-item" data-idx="${idx}" style="cursor:pointer;padding:2px 6px;border-radius:3px;">${idx + 1}: ${pair.intro}  ${pair.main}</div>`).join('');
+                html += result.matchedPairs.map((pair, idx) => `
+                    <div class="folder-item" data-idx="${idx}">
+                        <div class="folder-item-header">
+                            <div class="folder-item-title">配对 ${idx + 1}</div>
+                            <div class="folder-item-count">${pair.tasks ? pair.tasks.length : 0} 任务</div>
+                        </div>
+                        <div class="folder-item-details">
+                            <div>前贴: ${pair.intro}</div>
+                            <div>正片: ${pair.main}</div>
+                        </div>
+                    </div>
+                `).join('');
             }
-            if (result.unmatchedIntro && result.unmatchedIntro.length > 0) {
-                html += `<br><span style='color:#888;'>未匹配前贴: ${result.unmatchedIntro.join(', ')}</span>`;
+            else {
+                html = `
+                    <div class="empty-state">
+                        <div class="empty-icon">📁</div>
+                        <div class="empty-title">未找到匹配</div>
+                        <div class="empty-description">请检查文件夹命名格式</div>
+                    </div>
+                `;
             }
-            if (result.unmatchedMain && result.unmatchedMain.length > 0) {
-                html += `<br><span style='color:#888;'>未匹配正片: ${result.unmatchedMain.join(', ')}</span>`;
+            // 添加未匹配项
+            if (result.unmatchedIntro && result.unmatchedIntro.length > 0 ||
+                result.unmatchedMain && result.unmatchedMain.length > 0) {
+                html += '<div class="unmatched-section">';
+                html += '<div class="unmatched-title">未匹配项</div>';
+                if (result.unmatchedIntro && result.unmatchedIntro.length > 0) {
+                    result.unmatchedIntro.forEach((item) => {
+                        html += `<div class="unmatched-item">前贴: ${item}</div>`;
+                    });
+                }
+                if (result.unmatchedMain && result.unmatchedMain.length > 0) {
+                    result.unmatchedMain.forEach((item) => {
+                        html += `<div class="unmatched-item">正片: ${item}</div>`;
+                    });
+                }
+                html += '</div>';
             }
             folderList.innerHTML = html;
             // 绑定点击和悬停事件
-            Array.from(folderList.getElementsByClassName('pair-item')).forEach(item => {
+            Array.from(folderList.getElementsByClassName('folder-item')).forEach(item => {
                 const htmlItem = item;
                 htmlItem.addEventListener('click', function (event) {
                     const target = event.currentTarget;
                     const idx = target.getAttribute('data-idx');
+                    // 移除之前的选中状态
+                    Array.from(folderList.getElementsByClassName('folder-item')).forEach(el => {
+                        el.classList.remove('selected');
+                    });
+                    // 添加选中状态
+                    target.classList.add('selected');
+                    selectedFolderIndex = Number(idx);
                     if (idx !== null) {
                         renderTaskList(result.matchedPairs[Number(idx)].tasks || []);
                     }
-                });
-                htmlItem.addEventListener('mouseenter', function (event) {
-                    const target = event.currentTarget;
-                    target.style.background = '#e6f7ff';
-                });
-                htmlItem.addEventListener('mouseleave', function (event) {
-                    const target = event.currentTarget;
-                    target.style.background = '';
                 });
             });
         }
@@ -191,22 +280,43 @@
         // 渲染底部统计
         const statMatch = document.getElementById('stat-match');
         if (statMatch)
-            statMatch.innerText = `匹配: ${result.matchedPairs.length} 个配对`;
+            statMatch.innerText = `${result.matchedPairs.length} 个配对`;
         const statUnmatchedIntro = document.getElementById('stat-unmatched-intro');
         if (statUnmatchedIntro)
-            statUnmatchedIntro.innerText = `未匹配前贴: ${result.unmatchedIntro.length}`;
+            statUnmatchedIntro.innerText = `${result.unmatchedIntro.length}`;
         const statUnmatchedMain = document.getElementById('stat-unmatched-main');
         if (statUnmatchedMain)
-            statUnmatchedMain.innerText = `未匹配正片: ${result.unmatchedMain.length}`;
+            statUnmatchedMain.innerText = `${result.unmatchedMain.length}`;
     }
     function renderTaskList(tasks) {
         const taskList = document.getElementById('task-list');
         if (taskList) {
-            taskList.innerHTML = tasks.map(t => `<div>${t.taskInfo || JSON.stringify(t)}</div>`).join('');
+            if (tasks.length === 0) {
+                taskList.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">🎬</div>
+                        <div class="empty-title">暂无任务</div>
+                        <div class="empty-description">请选择左侧文件夹查看任务</div>
+                    </div>
+                `;
+            }
+            else {
+                taskList.innerHTML = tasks.map((task, index) => `
+                    <div class="task-item">
+                        <div class="task-header">
+                            <div class="task-title">任务 ${index + 1}</div>
+                            <div class="task-status pending">待处理</div>
+                        </div>
+                        <div class="task-details">
+                            ${task.taskInfo || JSON.stringify(task)}
+                        </div>
+                    </div>
+                `).join('');
+            }
         }
         const statTask = document.getElementById('stat-task');
         if (statTask)
-            statTask.innerText = `任务: ${tasks.length} 个`;
+            statTask.innerText = `${tasks.length} 个`;
     }
 })();
 
