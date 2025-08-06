@@ -1,3 +1,12 @@
 {
-  "key": "请替换为你的注册key"
+  "key": "your-actual-key-here",
+  "title": "优创客户端体验版",
+  "version": "0.3.0",
+  "description": "插件化客户端应用",
+  "tracker": {
+    "enabled": true,
+    "baseUrl": "https://scriptv2.qfei.cn",
+    "clientType": "VideoConverter",
+    "clientId": 2
+  }
 } 
