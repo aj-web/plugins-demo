@@ -1,7 +1,7 @@
 import { fork } from 'child_process'
 import path from 'path'
 import fs from 'fs'
-import pathManager from '../utils/path-manager'
+import pathManager from '../../utils/path-manager'
 
 export interface PluginManifest {
   name: string
