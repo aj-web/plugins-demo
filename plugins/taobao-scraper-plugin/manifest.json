@@ -1,0 +1,41 @@
+{
+  "id": "taobao-scraper-plugin",
+  "name": "淘宝好评图爬取插件",
+  "version": "1.0.0",
+  "description": "专业的淘宝商品好评图片爬取插件，支持图片搜索、商品详情页爬取和批量下载",
+  "author": "Taobao Scraper Team",
+  "events": [
+    {
+      "id": "taobao-login",
+      "name": "淘宝登录",
+      "description": "启动浏览器进行淘宝扫码登录",
+      "jsFile": "nodes/taobao-login.js",
+      "class": "TaobaoLoginNode",
+      "method": "startLogin"
+    },
+    {
+      "id": "taobao-login-check",
+      "name": "检查登录状态",
+      "description": "检查淘宝登录状态",
+      "jsFile": "nodes/taobao-login.js",
+      "class": "TaobaoLoginNode",
+      "method": "checkLoginStatus"
+    },
+    {
+      "id": "image-search",
+      "name": "图片搜索",
+      "description": "使用图片搜索淘宝商品",
+      "jsFile": "nodes/image-search.js",
+      "class": "ImageSearchNode",
+      "method": "runSearch"
+    },
+    {
+      "id": "crawl-download",
+      "name": "爬取下载",
+      "description": "爬取商品详情页的好评图片并下载",
+      "jsFile": "nodes/crawl-download.js",
+      "class": "CrawlDownloadNode",
+      "method": "crawlGoodReviews"
+    }
+  ]
+}

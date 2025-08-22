@@ -1,0 +1,1251 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>淘宝好评图爬取插件</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: #fafafa;
+            color: #171717;
+            line-height: 1.5;
+            font-size: 14px;
+        }
+
+        .steps-container {
+            background: white;
+            border: 1px solid #e5e5e5;
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+
+        .steps {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 48px;
+        }
+
+        .step {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+
+        .step-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 16px;
+            margin-bottom: 8px;
+        }
+
+        .step-icon.completed {
+            background: #10b981;
+            color: white;
+        }
+
+        .step-icon.active {
+            background: #0066ff;
+            color: white;
+        }
+
+        .step-icon.pending {
+            background: #e5e5e5;
+            color: #737373;
+        }
+
+        .step-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .step-description {
+            font-size: 12px;
+            color: #737373;
+        }
+
+        .navbar {
+            height: 48px;
+            background: white;
+            border-bottom: 1px solid #e5e5e5;
+            display: flex;
+            align-items: center;
+            padding: 0 24px;
+        }
+
+        .navbar-title {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .navbar-status {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: #737373;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #10b981;
+            display: inline-block;
+        }
+
+        .container {
+            display: flex;
+            height: calc(100vh - 48px);
+        }
+
+        .sidebar {
+            width: 240px;
+            background: white;
+            border-right: 1px solid #e5e5e5;
+            padding: 16px;
+        }
+
+        .sidebar-section {
+            margin-bottom: 24px;
+        }
+
+        .sidebar-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #a3a3a3;
+            margin-bottom: 8px;
+        }
+
+        .sidebar-item {
+            padding: 8px 12px;
+            border-radius: 6px;
+            color: #737373;
+            cursor: pointer;
+            margin-bottom: 4px;
+        }
+
+        .sidebar-item:hover {
+            background: #f5f5f5;
+            color: #171717;
+        }
+
+        .sidebar-item.active {
+            background: #f5f5f5;
+            color: #171717;
+            font-weight: 500;
+        }
+
+        .main-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+        }
+
+        .card {
+            background: white;
+            border: 1px solid #e5e5e5;
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .card-title {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .badge {
+            padding: 4px 8px;
+            background: #ef4444;
+            color: white;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .badge.success {
+            background: #10b981;
+        }
+
+        .login-frame {
+            width: 100%;
+            height: 400px;
+            border: 1px solid #e5e5e5;
+            border-radius: 6px;
+            background: #f5f5f5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #737373;
+        }
+
+        .upload-area {
+            border: 2px dashed #e5e5e5;
+            border-radius: 6px;
+            padding: 48px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .upload-area:hover {
+            border-color: #0066ff;
+            background: #fafafa;
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+            opacity: 0.3;
+        }
+
+        .button {
+            padding: 8px 16px;
+            background: #0066ff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .button:hover {
+            background: #0052cc;
+        }
+
+        .button:disabled {
+            background: #e5e5e5;
+            color: #a3a3a3;
+            cursor: not-allowed;
+        }
+
+        .progress-section {
+            display: flex;
+            gap: 24px;
+        }
+
+        .progress-card {
+            flex: 1;
+            padding: 16px;
+            background: #fafafa;
+            border-radius: 6px;
+        }
+
+        .progress-label {
+            font-size: 12px;
+            color: #737373;
+            margin-bottom: 8px;
+        }
+
+        .progress-value {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .progress-status {
+            font-size: 12px;
+            color: #737373;
+            margin-bottom: 8px;
+            min-height: 16px;
+        }
+
+        .progress-bar {
+            height: 4px;
+            background: #e5e5e5;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #0066ff;
+            transition: width 0.3s;
+        }
+
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+        }
+
+        .image-item {
+            position: relative;
+            padding-bottom: 100%;
+            background: #f5f5f5;
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid #e5e5e5;
+        }
+
+        .image-item img {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .product-section {
+            margin-bottom: 32px;
+        }
+
+        .product-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #e5e5e5;
+        }
+
+        .product-title {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .product-count {
+            font-size: 12px;
+            color: #737373;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 48px;
+            color: #737373;
+        }
+
+        .empty-icon {
+            font-size: 48px;
+            opacity: 0.3;
+            margin-bottom: 12px;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #ffffff;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .search-results {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        
+        .search-item {
+            display: flex;
+            gap: 16px;
+            padding: 16px;
+            border: 1px solid #e5e5e5;
+            border-radius: 6px;
+            background: #fafafa;
+        }
+        
+        .product-info {
+            flex: 1;
+        }
+        
+        .product-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #171717;
+        }
+        
+        .product-link {
+            margin-bottom: 8px;
+        }
+        
+        .product-link a {
+            color: #0066ff;
+            text-decoration: none;
+            font-size: 12px;
+        }
+        
+        .product-link a:hover {
+            text-decoration: underline;
+        }
+        
+        .product-images {
+            font-size: 12px;
+            color: #737373;
+        }
+        
+        .image-preview {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .preview-image {
+            width: 60px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 4px;
+            border: 1px solid #e5e5e5;
+        }
+        
+        .search-info {
+            font-size: 12px;
+            color: #737373;
+        }
+        
+        .empty-results {
+            text-align: center;
+            padding: 48px;
+            color: #737373;
+        }
+        
+        .empty-message {
+            font-size: 14px;
+        }
+
+        /* Linear风格的图片展示组件 */
+        .image-gallery {
+            display: block;
+            margin-top: 16px;
+        }
+
+        /* 商品分组样式 */
+        .product-group {
+            margin-bottom: 32px;
+            background: white;
+            border: 1px solid #e5e5e5;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .product-group-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            background: #f9fafb;
+            border-bottom: 1px solid #e5e5e5;
+        }
+
+        .product-group-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .product-number {
+            font-size: 14px;
+            font-weight: 600;
+            color: #171717;
+        }
+
+        .product-name {
+            font-size: 14px;
+            color: #737373;
+            max-width: 400px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .product-group-meta {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .image-count {
+            font-size: 12px;
+            color: #737373;
+            background: #f3f4f6;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+
+        .product-images-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 12px;
+            padding: 20px;
+            min-height: 100px;
+        }
+
+        .product-images-grid.drag-over {
+            background: #f0f9ff;
+            border: 2px dashed #0066ff;
+        }
+
+        .image-card {
+            background: white;
+            border: 1px solid #e5e5e5;
+            border-radius: 8px;
+            overflow: hidden;
+            transition: all 0.2s ease;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .image-card:hover {
+            border-color: #0066ff;
+            box-shadow: 0 4px 12px rgba(0, 102, 255, 0.1);
+            transform: translateY(-2px);
+        }
+
+        .image-card.selected {
+            border-color: #0066ff;
+            background: #f8faff;
+        }
+
+        .image-card.selected::before {
+            content: '';
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 20px;
+            height: 20px;
+            background: #0066ff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2;
+        }
+
+        .image-card.selected::after {
+            content: '';
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 20px;
+            height: 20px;
+            background: #0066ff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 3;
+        }
+        
+        /* 选择标记样式 */
+        .selection-badge {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 20px;
+            height: 20px;
+            background: #0066ff;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+            z-index: 4;
+            animation: badge-appear 0.2s ease;
+        }
+        
+        @keyframes badge-appear {
+            from {
+                transform: scale(0);
+                opacity: 0;
+            }
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .image-container {
+            position: relative;
+            width: 100%;
+            height: 200px;
+            overflow: hidden;
+            background: #f9fafb;
+        }
+
+        .image-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.2s ease;
+        }
+
+        .image-card:hover .image-container img {
+            transform: scale(1.05);
+        }
+
+        .image-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .image-card:hover .image-overlay {
+            opacity: 1;
+        }
+
+        .image-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .image-action-btn {
+            background: white;
+            border: none;
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 12px;
+            font-weight: 500;
+            color: #171717;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .image-action-btn:hover {
+            background: #f3f4f6;
+            transform: translateY(-1px);
+        }
+
+        .image-info {
+            padding: 12px;
+        }
+
+        .image-title {
+            font-size: 13px;
+            font-weight: 500;
+            color: #171717;
+            margin-bottom: 4px;
+            line-height: 1.4;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .image-meta {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 11px;
+            color: #737373;
+        }
+
+        .image-size {
+            background: #f3f4f6;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+        }
+
+        .image-loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 200px;
+            background: #f9fafb;
+        }
+
+        .loading-spinner {
+            width: 24px;
+            height: 24px;
+            border: 2px solid #e5e5e5;
+            border-top: 2px solid #0066ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .image-error {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 200px;
+            background: #fef2f2;
+            color: #dc2626;
+            font-size: 12px;
+        }
+
+        .image-error-icon {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+
+
+
+        /* 搜索结果卡片样式优化 */
+        .search-results {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .search-item {
+            background: white;
+            border: 1px solid #e5e5e5;
+            border-radius: 8px;
+            padding: 16px;
+            transition: all 0.2s ease;
+        }
+
+        .search-item:hover {
+            border-color: #d1d5db;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        .product-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+
+        .product-details {
+            flex: 1;
+        }
+
+        .product-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #171717;
+            margin-bottom: 4px;
+            line-height: 1.4;
+        }
+
+        .product-meta {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            font-size: 12px;
+            color: #737373;
+        }
+
+        .product-link a {
+            color: #0066ff;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .product-link a:hover {
+            text-decoration: underline;
+        }
+
+        .image-count {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .image-count::before {
+            content: '📷';
+            font-size: 14px;
+        }
+
+        .product-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .product-action-btn {
+            background: #f3f4f6;
+            border: 1px solid #e5e5e5;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 12px;
+            color: #171717;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .product-action-btn:hover {
+            background: #e5e7eb;
+            border-color: #d1d5db;
+        }
+
+        .product-action-btn.primary {
+            background: #0066ff;
+            border-color: #0066ff;
+            color: white;
+        }
+
+        .product-action-btn.primary:hover {
+            background: #0052cc;
+            border-color: #0052cc;
+        }
+        
+        /* 下载按钮布局 */
+        .download-buttons {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        
+        .product-download-buttons {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        
+        .button.secondary {
+            background: #f3f4f6;
+            color: #171717;
+            border: 1px solid #e5e5e5;
+        }
+        
+        .button.secondary:hover {
+            background: #e5e7eb;
+            border-color: #d1d5db;
+        }
+
+        /* 空状态优化 */
+        .empty-state {
+            text-align: center;
+            padding: 48px 24px;
+            color: #737373;
+        }
+
+        .empty-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .empty-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #171717;
+            margin-bottom: 8px;
+        }
+
+        .empty-description {
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        /* 卡片头部操作区域 */
+        .card-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .image-stats {
+            font-size: 12px;
+            color: #737373;
+            background: #f3f4f6;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+
+        /* 图片加载状态 */
+        .image-container.loading .image-loading {
+            display: flex;
+        }
+
+        .image-container.loading img {
+            display: none;
+        }
+
+        .image-container:not(.loading) .image-loading {
+            display: none;
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .product-group-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 12px;
+            }
+            
+            .product-group-meta {
+                width: 100%;
+                justify-content: space-between;
+            }
+            
+            .product-images-grid {
+                grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+                gap: 8px;
+                padding: 16px;
+            }
+            
+            .image-container {
+                height: 120px;
+            }
+            
+
+            
+            .image-modal-content {
+                max-width: 95%;
+                max-height: 95%;
+            }
+            
+            .image-modal-actions {
+                flex-direction: column;
+                gap: 8px;
+            }
+            
+            .image-modal-btn {
+                width: 100%;
+            }
+            
+            .progress-container {
+                flex-direction: column;
+                gap: 24px;
+            }
+            
+            .progress-value {
+                font-size: 20px;
+            }
+        }
+
+        /* 平滑滚动 */
+        html {
+            scroll-behavior: smooth;
+        }
+
+        /* 焦点状态 */
+        .image-card:focus {
+            outline: 2px solid #0066ff;
+            outline-offset: 2px;
+        }
+
+        .image-action-btn:focus {
+            outline: 2px solid #0066ff;
+            outline-offset: 2px;
+        }
+
+        /* 图片模态框样式 */
+        .image-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .image-modal.show {
+            opacity: 1;
+            display: flex !important;
+        }
+
+        .image-modal-content {
+            position: relative;
+            max-width: 90%;
+            max-height: 90%;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .image-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            background: #f9fafb;
+            border-bottom: 1px solid #e5e5e5;
+        }
+
+        .image-modal-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #171717;
+        }
+
+        .image-modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            color: #737373;
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+        }
+
+        .image-modal-close:hover {
+            background: #e5e7eb;
+            color: #171717;
+        }
+
+        .image-modal-body {
+            padding: 20px;
+            text-align: center;
+        }
+
+        .image-modal-image {
+            max-width: 100%;
+            max-height: 70vh;
+            object-fit: contain;
+            border-radius: 4px;
+        }
+
+
+
+        /* 拖拽样式 */
+        .image-card.dragging {
+            opacity: 0.5;
+            transform: rotate(5deg);
+            z-index: 1000;
+        }
+
+        .image-card.drag-over {
+            border-color: #0066ff;
+            background: #f8faff;
+        }
+
+        /* 任务进度样式 */
+        .progress-container {
+            display: flex;
+            gap: 32px;
+            padding: 20px;
+        }
+
+        .progress-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .progress-title {
+            font-size: 14px;
+            color: #737373;
+            font-weight: 500;
+        }
+
+        .progress-value {
+            font-size: 24px;
+            font-weight: 600;
+            color: #171717;
+            line-height: 1;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #f3f4f6;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #0066ff;
+            border-radius: 4px;
+            transition: width 0.3s ease, background-color 0.3s ease;
+        }
+
+        .progress-fill.completed {
+            background: #10b981;
+        }
+
+        .progress-fill.error {
+            background: #ef4444;
+        }
+
+        .progress-fill.processing {
+            background: linear-gradient(90deg, #0066ff 0%, #3b82f6 50%, #0066ff 100%);
+            background-size: 200% 100%;
+            animation: progress-animation 2s linear infinite;
+        }
+
+        @keyframes progress-animation {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+    </style>
+    <script defer="defer" src="main.js"></script>
+</head>
+<body>
+    <div class="navbar">
+        <div class="navbar-title">淘宝好评图爬取</div>
+        <div class="navbar-status">
+            <span class="status-dot"></span>
+            <span>未登录</span>
+        </div>
+    </div>
+    
+    <div class="container">
+        <div class="sidebar">
+            <div class="sidebar-section">
+                <div class="sidebar-label">功能</div>
+                <div class="sidebar-item active">🏠 主页</div>
+                <div class="sidebar-item">📷 图片搜索</div>
+                <div class="sidebar-item">📊 任务进度</div>
+                <div class="sidebar-item">💾 下载管理</div>
+            </div>
+            <div class="sidebar-section">
+                <div class="sidebar-label">历史任务</div>
+                <div class="sidebar-item">任务_20241220_001</div>
+                <div class="sidebar-item">任务_20241219_003</div>
+                <div class="sidebar-item">任务_20241219_002</div>
+            </div>
+        </div>
+        
+        <div class="main-content">
+            <div class="steps-container">
+                <div class="steps">
+                    <div class="step">
+                        <div class="step-icon active">1</div>
+                        <div class="step-title">登录淘宝</div>
+                        <div class="step-description">扫码登录您的淘宝账号</div>
+                    </div>
+                    <div class="step">
+                        <div class="step-icon pending">2</div>
+                        <div class="step-title">上传图片</div>
+                        <div class="step-description">选择要搜索的商品图片</div>
+                    </div>
+                    <div class="step">
+                        <div class="step-icon pending">3</div>
+                        <div class="step-title">爬取评价</div>
+                        <div class="step-description">自动爬取商品好评图片</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">淘宝登录状态</div>
+                    <div class="badge" id="loginBadge">未登录</div>
+                </div>
+                <div class="login-frame" id="loginFrame">
+                    <div style="text-align: center;">
+                        <div style="margin-bottom: 16px; color: #737373;">点击下方按钮开始登录淘宝</div>
+                        <button class="button" id="loginBtn">开始登录</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">上传搜索图片</div>
+                </div>
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-icon">📤</div>
+                    <div>点击或拖拽图片到此处</div>
+                    <div style="color: #a3a3a3; font-size: 12px; margin-top: 8px;">支持 JPG、PNG、WEBP 格式，最大 5MB</div>
+                </div>
+                <div style="margin-top: 16px; text-align: right;">
+                    <button class="button" id="searchBtn" disabled>开始搜索</button>
+                </div>
+            </div>
+            
+
+            
+            <!-- 任务进度卡片 -->
+            <div class="card" id="taskProgressCard">
+                <div class="card-header">
+                    <div class="card-title">任务进度</div>
+                </div>
+                <div class="progress-container">
+                    <div class="progress-section">
+                        <div class="progress-title">爬取进度</div>
+                        <div class="progress-value" id="crawlProgressValue">未开始</div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="crawlProgressFill" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                    <div class="progress-section">
+                        <div class="progress-title">下载进度</div>
+                        <div class="progress-value" id="downloadProgressValue">未开始</div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="downloadProgressFill" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">好评图片</div>
+                    <div class="card-actions">
+                        <span class="image-stats" id="imageStats" style="display: none;">共 <span id="totalImages">0</span> 张图片</span>
+                        <div class="download-buttons" id="downloadButtons" style="display: none;">
+                            <button class="button" id="downloadAllBtn">全部下载</button>
+                            <button class="button secondary" id="clearAllSelectionBtn" style="display: none;">取消选中</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="empty-state" id="emptyState">
+                    <div class="empty-icon">📷</div>
+                    <div class="empty-title">暂无图片</div>
+                    <div class="empty-description">请先完成登录和图片搜索</div>
+                </div>
+                <div class="image-gallery" id="imageGallery" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 图片模态框 -->
+    <div class="image-modal" id="imageModal">
+        <div class="image-modal-content">
+            <div class="image-modal-header">
+                <div class="image-modal-title" id="modalTitle">图片预览</div>
+                <button class="image-modal-close" onclick="closeImageModal()">&times;</button>
+            </div>
+            <div class="image-modal-body">
+                <img class="image-modal-image" id="modalImage" src="" alt="图片预览">
+            </div>
+        </div>
+    </div>
+</body>
+</html>
