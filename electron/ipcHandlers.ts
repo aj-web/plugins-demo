@@ -2,6 +2,11 @@ import { ipcMain, dialog } from 'electron'
 import { pluginManager } from './services/plugin-manager'
 import pathManager from '../utils/path-manager'
 import fs from 'fs'
+import path from 'path'
+import https from 'https'
+import http from 'http'
+import { pipeline } from 'stream/promises'
+import archiver from 'archiver'
 
 export function setupIpcHandlers(): void {
   console.log('[ipcHandlers] Setting up IPC handlers')
@@ -76,5 +81,124 @@ export function setupIpcHandlers(): void {
       console.error('[ipcHandlers] check-file-exists error:', error)
       return false
     }
+  })
+
+  // ZIP打包下载API
+  ipcMain.handle('download-images-as-zip', async (event, images: Array<{url: string, productTitle: string, index: number}>) => {
+    console.log('[ipcHandlers] download-images-as-zip called with images count:', images.length)
+    
+    try {
+      // 选择保存位置
+      const result = await dialog.showSaveDialog({
+        title: '保存ZIP文件',
+        defaultPath: `淘宝好评图片_${new Date().toISOString().slice(0, 10)}.zip`,
+        filters: [
+          { name: 'ZIP文件', extensions: ['zip'] }
+        ]
+      })
+
+      if (result.canceled || !result.filePath) {
+        console.log('[ipcHandlers] download-images-as-zip canceled by user')
+        return { success: false, error: '用户取消了保存' }
+      }
+
+      const zipPath = result.filePath
+      console.log('[ipcHandlers] download-images-as-zip saving to:', zipPath)
+
+      // 创建ZIP文件
+      const output = fs.createWriteStream(zipPath)
+      const archive = archiver('zip', {
+        zlib: { level: 9 } // 设置压缩级别
+      })
+
+      // 监听ZIP创建完成
+      const zipPromise = new Promise((resolve, reject) => {
+        output.on('close', () => {
+          console.log('[ipcHandlers] download-images-as-zip completed, total bytes:', archive.pointer())
+          resolve({ success: true, filePath: zipPath })
+        })
+
+        archive.on('error', (err: Error) => {
+          console.error('[ipcHandlers] download-images-as-zip archive error:', err)
+          reject(err)
+        })
+      })
+
+      // 连接输出流
+      archive.pipe(output)
+
+      // 下载并添加图片到ZIP
+      let processed = 0
+      const total = images.length
+
+      for (let i = 0; i < images.length; i++) {
+        const image = images[i]
+        try {
+          console.log('[ipcHandlers] download-images-as-zip processing image:', image.url)
+          console.log('[ipcHandlers] download-images-as-zip image data:', image)
+          
+          // 下载图片
+          const imageBuffer = await downloadImage(image.url)
+          
+          // 使用选择顺序作为文件名（从1开始）
+          const fileName = `${i + 1}.jpg`
+          
+          // 直接添加到ZIP根目录，不按商品分组
+          archive.append(imageBuffer, { name: fileName })
+          
+          processed++
+          console.log('[ipcHandlers] download-images-as-zip progress:', processed, '/', total, 'filename:', fileName)
+          
+        } catch (error) {
+          console.error('[ipcHandlers] download-images-as-zip image download error:', error)
+          processed++
+          // 继续处理其他图片，不中断整个流程
+        }
+      }
+
+      // 完成ZIP创建
+      await archive.finalize()
+      
+      const zipResult = await zipPromise
+      console.log('[ipcHandlers] download-images-as-zip success:', zipResult)
+      return zipResult
+
+    } catch (error) {
+      console.error('[ipcHandlers] download-images-as-zip error:', error)
+      return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+    }
+  })
+}
+
+// 下载图片的辅助函数
+async function downloadImage(url: string): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const protocol = url.startsWith('https:') ? https : http
+    
+    const request = protocol.get(url, (response) => {
+      if (response.statusCode !== 200) {
+        reject(new Error(`HTTP ${response.statusCode}: ${response.statusMessage}`))
+        return
+      }
+
+      const chunks: Buffer[] = []
+      response.on('data', (chunk) => {
+        chunks.push(chunk)
+      })
+
+      response.on('end', () => {
+        const buffer = Buffer.concat(chunks)
+        resolve(buffer)
+      })
+    })
+
+    request.on('error', (error) => {
+      reject(error)
+    })
+
+    request.setTimeout(30000, () => {
+      request.destroy()
+      reject(new Error('下载超时'))
+    })
   })
 } 

@@ -40,6 +40,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return ipcRenderer.invoke('trigger-event', pluginName, eventType, params)
     }
   },
+  downloadImagesAsZip: (images: Array<{url: string, productTitle: string, index: number}>) => {
+    console.log('[preload] downloadImagesAsZip called with images count:', images.length)
+    return ipcRenderer.invoke('download-images-as-zip', images)
+  },
   onBusinessStopped: (callback: () => void) => {
     console.log('[preload] onBusinessStopped called')
     ipcRenderer.on('business-stopped', callback)

@@ -269,22 +269,7 @@
       background: white;
     }
 
-    .content-header {
-      padding: 20px 24px 16px;
-      border-bottom: 1px solid #f0f0f0;
-    }
 
-    .content-title {
-      font-size: 16px;
-      font-weight: 600;
-      color: #1a1a1a;
-      margin-bottom: 8px;
-    }
-
-    .content-subtitle {
-      font-size: 13px;
-      color: #666;
-    }
 
     .task-list {
       flex: 1;
@@ -485,4 +470,4 @@
       .stats {
         gap: 16px;
       }
-    }</style><script defer="defer" src="main.js"></script></head><body><div class="header"><div class="header-left"><div class="logo"><div class="logo-icon">V</div>视频拼接插件</div><div class="folder-selector"><button class="btn btn-secondary" id="select-folder-btn">📁 选择文件夹</button><div class="folder-path" id="current-dir">未选择文件夹</div></div></div><div class="header-right"><button class="btn btn-primary" id="analyze-btn">🔍 分析文件夹</button><div class="parallel-selector"><label for="parallel-num">并行数:</label> <select id="parallel-num"><option value="1">1</option><option value="2">2</option><option value="4" selected="selected">4</option><option value="8">8</option></select></div></div></div><div class="main-container"><div class="sidebar"><div class="sidebar-header"><div class="sidebar-title">视频文件夹</div><div class="sidebar-subtitle">点击文件夹查看详细任务</div></div><div class="folder-list" id="folder-list"><div class="empty-state"><div class="empty-icon">📁</div><div class="empty-title">暂无文件夹</div><div class="empty-description">请先选择文件夹并进行分析</div></div></div></div><div class="content"><div class="content-header"><div class="content-title">任务列表</div><div class="content-subtitle">选择左侧文件夹查看对应的处理任务</div></div><div class="task-list" id="task-list"><div class="empty-state"><div class="empty-icon">🎬</div><div class="empty-title">暂无任务</div><div class="empty-description">请先选择文件夹进行分析</div></div></div></div></div><div class="footer"><div class="stats"><div class="stat-item"><span class="stat-label">匹配:</span> <span class="stat-value" id="stat-match">0 个配对</span></div><div class="stat-item"><span class="stat-label">未匹配前贴:</span> <span class="stat-value" id="stat-unmatched-intro">0</span></div><div class="stat-item"><span class="stat-label">未匹配正片:</span> <span class="stat-value" id="stat-unmatched-main">0</span></div><div class="stat-item"><span class="stat-label">任务:</span> <span class="stat-value" id="stat-task">0 个</span></div><div class="stat-item"><span class="stat-label">已用时间:</span> <span class="stat-value" id="stat-time">00:00:00</span></div></div><div class="progress-section"><div class="progress-bar"><div class="progress-fill" id="progress-inner"></div></div><div class="progress-text" id="stat-progress">0/0</div></div><div class="controls"><button class="btn btn-primary" id="start-btn"><span id="start-btn-text">开始处理</span> <span class="spinner" id="start-btn-spinner" style="display: none;"></span></button> <button class="btn btn-secondary" id="stop-btn" disabled="disabled">停止处理</button></div></div><script defer="defer" src="main.js"></script></body></html>
+    }</style><script defer="defer" src="main.js"></script></head><body><div class="header"><div class="header-left"><div class="logo"><div class="logo-icon">V</div>视频拼接插件</div><div class="folder-selector"><button class="btn btn-secondary" id="select-folder-btn">📁 选择文件夹</button><div class="folder-path" id="current-dir">未选择文件夹</div></div></div><div class="header-right"><button class="btn btn-primary" id="analyze-btn">🔍 分析文件夹</button><div class="parallel-selector"><label for="parallel-num">并行数:</label> <select id="parallel-num"><option value="1">1</option><option value="2">2</option><option value="4" selected="selected">4</option><option value="8">8</option></select></div></div></div><div class="main-container"><div class="sidebar"><div class="sidebar-header"><div class="sidebar-title">视频文件夹</div><div class="sidebar-subtitle">点击文件夹查看详细任务</div></div><div class="folder-list" id="folder-list"><div class="empty-state"><div class="empty-icon">📁</div><div class="empty-title">暂无文件夹</div><div class="empty-description">请先选择文件夹并进行分析</div></div></div></div><div class="content"><div class="task-list" id="task-list"><div class="empty-state"><div class="empty-icon">🎬</div><div class="empty-title">暂无任务</div><div class="empty-description">请先选择文件夹进行分析</div></div></div></div></div><div class="footer"><div class="stats"><div class="stat-item"><span class="stat-label">匹配:</span> <span class="stat-value" id="stat-match">0 个配对</span></div><div class="stat-item"><span class="stat-label">未匹配前贴:</span> <span class="stat-value" id="stat-unmatched-intro">0</span></div><div class="stat-item"><span class="stat-label">未匹配正片:</span> <span class="stat-value" id="stat-unmatched-main">0</span></div><div class="stat-item"><span class="stat-label">任务:</span> <span class="stat-value" id="stat-task">0 个</span></div><div class="stat-item"><span class="stat-label">已用时间:</span> <span class="stat-value" id="stat-time">00:00:00</span></div></div><div class="progress-section"><div class="progress-bar"><div class="progress-fill" id="progress-inner"></div></div><div class="progress-text" id="stat-progress">0/0</div></div><div class="controls"><button class="btn btn-primary" id="start-btn"><span id="start-btn-text">开始处理</span> <span class="spinner" id="start-btn-spinner" style="display: none;"></span></button> <button class="btn btn-secondary" id="stop-btn" disabled="disabled">停止处理</button></div></div><script defer="defer" src="main.js"></script></body></html>

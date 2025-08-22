@@ -38,11 +38,6 @@
 
     <!-- 右侧主内容区域 -->
     <div class="main-content">
-      <div class="content-header">
-        <h1 class="content-title">{{ currentTitle }}</h1>
-        <p class="content-subtitle">{{ currentSubtitle }}</p>
-      </div>
-      
       <div class="content-body">
         <router-view />
       </div>
@@ -64,18 +59,6 @@ const sidebarCollapsed = ref(false)
 const currentPlugin = ref('')
 
 const plugins = computed(() => pluginStore.plugins)
-const currentTitle = computed(() => {
-  if (route.name === 'plugin') {
-    return route.params.name as string
-  }
-  return '工作空间'
-})
-const currentSubtitle = computed(() => {
-  if (route.name === 'plugin') {
-    return '插件功能界面'
-  }
-  return '管理您的插件和工作空间'
-})
 
 const toggleSidebar = () => {
   sidebarCollapsed.value = !sidebarCollapsed.value
@@ -231,24 +214,7 @@ onMounted(async () => {
   overflow: hidden;
 }
 
-/* 顶部标题栏 */
-.content-header {
-  padding: 24px 32px;
-  border-bottom: 1px solid #3a3a3a;
-}
 
-.content-title {
-  font-size: 28px;
-  font-weight: 700;
-  color: #ffffff;
-  margin-bottom: 8px;
-}
-
-.content-subtitle {
-  font-size: 16px;
-  color: #888888;
-  font-weight: 400;
-}
 
 /* 内容区域 */
 .content-body {
