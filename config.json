@@ -8,5 +8,18 @@
     "baseUrl": "https://scriptv2.qfei.cn",
     "clientType": "VideoConverter",
     "clientId": 2
-  }
+  },
+  "ipcAllowlist": [
+    "select-file",
+    "select-folder",
+    "get-plugin-dirs",
+    "start-plugin-process",
+    "trigger-event",
+    "get-plugin-resource-path",
+    "get-plugin-http-url",
+    "check-file-exists",
+    "download-images-as-zip",
+    "get-plugins-status",
+    "get-ipc-allowlist"
+  ]
 } 

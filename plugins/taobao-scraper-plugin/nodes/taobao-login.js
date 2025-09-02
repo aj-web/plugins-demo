@@ -43,7 +43,7 @@ class TaobaoLoginNode {
 
             // 导航到淘宝登录页面
             console.log('导航到淘宝登录页面...');
-            await this.page.goto('https://login.taobao.com/member/login.jhtml', {
+            await this.page.goto('https://login.taobao.com/havanaone/login/login.htm?bizName=taobao&spm=a21bo.jianhua/a.action.dlogin.5af92a89D4lfpE&f=top&redirectURL=http%3A%2F%2Fwww.taobao.com%2F', {
                 waitUntil: 'domcontentloaded',
                 timeout: 60000
             });
@@ -54,17 +54,17 @@ class TaobaoLoginNode {
             console.log('淘宝登录页面已打开，等待用户扫码登录...');
 
             // 等待登录成功
-            let isLoggedIn = false;
+            let loginResult = null;
             try{
-                isLoggedIn = await this.waitForLogin();
-                console.log('登录结果', isLoggedIn);
+                loginResult = await this.waitForLogin();
+                console.log('登录结果', loginResult);
             }catch(error){
                 console.error('登录失败', error);
+                loginResult = { success: false, message: error.message };
             }
 
-            if (isLoggedIn) {
+            if (loginResult && loginResult.success) {
                 console.log('登录成功！正在保存cookies...');
-                
                 // 保存cookies到内存
                 await this.saveCookiesToMemory();
                 
@@ -77,9 +77,9 @@ class TaobaoLoginNode {
                 
                 return { success: true, message: '登录成功，cookies已保存' };
             } else {
-                console.log('登录超时或失败');
+                console.log('登录失败或取消:', loginResult?.message || '未知原因');
                 await this.closeBrowser();
-                return { success: false, message: '登录超时或失败' };
+                return { success: false, message: loginResult?.message || '登录失败' };
             }
 
         } catch (error) {
@@ -91,20 +91,45 @@ class TaobaoLoginNode {
     /**
      * 等待用户登录
      */
-    async waitForLogin() {
-        try {
-            // 等待登录成功后的重定向或特定元素
-            await this.page.waitForFunction(() => {
-                // 检查是否已登录（URL变化或特定元素出现）
-                return window.location.href.includes('taobao.com') && 
-                       !window.location.href.includes('login');
-            }, { timeout: 300000 }); // 5分钟超时
-
-            return true;
-        } catch (error) {
-            console.error('等待登录超时:', error);
-            return false;
+    async waitForLogin(maxAttempts = 100, interval = 2000) {
+        console.log('开始轮询检查登录状态...');
+        
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            console.log(`第 ${attempt} 次检查登录状态...`);
+            
+            // 检查页面是否已关闭
+            try {
+                if (this.page && this.page.isClosed()) {
+                    console.log('检测到页面已关闭，用户取消了登录');
+                    return { success: false, message: '登录取消' };
+                }
+            } catch (error) {
+                console.log('页面状态检查异常，可能已关闭:', error.message);
+                return { success: false, message: '登录取消' };
+            }
+            
+            try {
+                const result = await this.checkLoginStatus();
+                
+                if (result.success) {
+                    console.log(`登录成功！共检查了 ${attempt} 次`);
+                    return result;
+                }
+                
+            } catch (error) {
+                // 忽略所有检查错误，继续轮询
+                console.log(`第 ${attempt} 次检查出错（忽略错误继续检查）: ${error.message}`);
+            }
+            
+            // 最后一次检查失败，不等待
+            if (attempt < maxAttempts) {
+                console.log(`等待 ${interval}ms 后进行下一次检查...`);
+                await new Promise(resolve => setTimeout(resolve, interval));
+            }
         }
+        
+        console.log(`登录检查超时，共检查了 ${maxAttempts} 次`);
+        return { success: false, message: '登录检查超时' };
     }
 
     /**
@@ -120,7 +145,7 @@ class TaobaoLoginNode {
                 const nickText = await userNick.textContent();
                 if (nickText && nickText.trim()) {
                     console.log(`发现用户昵称: ${nickText.trim()}`);
-                    return true;
+                    return { success: true, message: `登录成功` };
                 }
             }
             
@@ -130,62 +155,15 @@ class TaobaoLoginNode {
                 const cartText = await cartElement.textContent();
                 if (cartText && cartText.trim()) {
                     console.log(`发现购物车数量: ${cartText.trim()}`);
-                    return true;
+                    return { success: true, message: `登录成功` };
                 }
-            }
-            
-            // 检查是否存在待收货等订单信息（已登录状态的特征）
-            const orderElements = await this.page.$$('.member-awaiting strong, .member-delivery strong, .member-nonpayment strong, .member-comment strong');
-            if (orderElements.length > 0) {
-                for (const element of orderElements) {
-                    const text = await element.textContent();
-                    if (text && text.trim() !== '') {
-                        console.log(`发现订单信息: ${text.trim()}`);
-                        return true;
-                    }
-                }
-            }
-            
-            // 检查是否存在用户头像区域（已登录状态的特征）
-            const avatarElement = await this.page.$('.J_UserMemberAvatar');
-            if (avatarElement) {
-                console.log('发现用户头像区域');
-                return true;
-            }
-            
-            // 检查是否存在"我的淘宝"链接（已登录状态的特征）
-            const myTaobaoLink = await this.page.$('a[href*="i.taobao.com"]');
-            if (myTaobaoLink) {
-                console.log('发现"我的淘宝"链接');
-                return true;
-            }
-            
-            // 检查是否存在"收藏夹"链接（已登录状态的特征）
-            const favoriteLink = await this.page.$('a[href*="favorite.taobao.com"]');
-            if (favoriteLink) {
-                console.log('发现"收藏夹"链接');
-                return true;
-            }
-            
-            // 检查是否存在"已买到"链接（已登录状态的特征）
-            const boughtLink = await this.page.$('a[href*="buyertrade.taobao.com"]');
-            if (boughtLink) {
-                console.log('发现"已买到"链接');
-                return true;
-            }
-            
-            // 检查是否存在"足迹"链接（已登录状态的特征）
-            const footprintLink = await this.page.$('a[href*="footMark"]');
-            if (footprintLink) {
-                console.log('发现"足迹"链接');
-                return true;
             }
             
             console.log('未找到明确的登录状态标识，默认为未登录');
-            return false;
+            return { success: false, message: '未找到登录标识' };
         } catch (error) {
             console.error('检查登录状态时出错:', error);
-            return false;
+            return { success: false, message: '检查登录状态时出错' };
         }
     }
 
@@ -223,7 +201,7 @@ class TaobaoLoginNode {
             }
 
             const cookies = await this.context.cookies();
-            this.cookieManager.saveCookies(cookies);
+            this.cookieManager.saveCookies('taobao', cookies);
             console.log(`成功保存 ${cookies.length} 个cookies`);
 
         } catch (error) {

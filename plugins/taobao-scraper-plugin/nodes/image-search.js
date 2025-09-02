@@ -36,7 +36,6 @@ class ImageSearchNode {
             ];
 
             this.browser = await chromium.launch({
-
                 headless: true,
                 args: browserArgs
             });
@@ -97,7 +96,7 @@ class ImageSearchNode {
      */
     async loginWithCookies() {
         try {
-            const cookies = this.cookieManager.getCookies();
+            const cookies = this.cookieManager.getCookies('taobao');
             if (cookies.length > 0) {
                 await this.context.addCookies(cookies);
                 console.log(`已添加 ${cookies.length} 个cookies`);
@@ -313,6 +312,7 @@ class ImageSearchNode {
      * 执行图片搜索
      */
     async uploadImageSearch(filePath) {
+        console.log('uploadImageSearch', filePath);
         try {
             console.log(`📸 开始图片搜索: ${filePath}`);
 
@@ -886,10 +886,12 @@ class ImageSearchNode {
     /**
      * 执行完整的图片搜索流程
      */
-    async runSearch(filePath) {
+    async runSearch(filePath, skuId = null) {
         try {
-            console.log('开始执行图片搜索流程...');
-
+            console.log('开始执行搜索流程...');
+            console.log('filePath', filePath);
+            console.log('skuId', skuId);
+            
             // 启动浏览器
             await this.startBrowser();
 
@@ -915,27 +917,48 @@ class ImageSearchNode {
             // 刷新页面
             await this.refreshPage();
 
-            // 执行图片搜索
-            const searchSuccess = await this.uploadImageSearch(filePath);
-            if (!searchSuccess) {
-                return { success: false, message: '图片搜索失败' };
+            let results = [];
+            
+            if (skuId) {
+                // 如果提供了sku_id，直接构造商品详情页URL
+                console.log(`使用SKU ID: ${skuId} 构造商品详情页`);
+                const productUrl = `https://item.taobao.com/item.htm?id=${skuId}`;
+                
+                // 构造搜索结果
+                results = [{
+                    rank: 1,
+                    title: `商品ID: ${skuId}`,
+                    link: productUrl,
+                    source: '淘宝'
+                }];
+                
+                console.log(`SKU ID模式：构造商品URL: ${productUrl}`);
+            } else if (filePath) {
+                // 原有的图片搜索流程
+                console.log('执行图片搜索...');
+                const searchSuccess = await this.uploadImageSearch(filePath);
+                if (!searchSuccess) {
+                    return { success: false, message: '图片搜索失败' };
+                }
+
+                // 等待结果页面加载
+                console.log('⏳ 等待搜索结果加载...');
+                await this.page.waitForTimeout(5000);
+                
+                // 提取搜索结果
+                results = await this.extractSearchResults();
+            } else {
+                return { success: false, message: '请提供图片路径或SKU ID' };
             }
-
-            // 等待结果页面加载
-            console.log('⏳ 等待搜索结果加载...');
-            await this.page.waitForTimeout(5000);
-
-            // 提取搜索结果
-            const results = await this.extractSearchResults();
 
             // 保存搜索结果到实例变量
             this.searchResults = results;
 
-            console.log(`图片搜索完成，找到 ${results.length} 个淘宝商品`);
+            console.log(`搜索完成，找到 ${results.length} 个淘宝商品`);
             
             // 直接调用爬取评价图片
             console.log('开始爬取评价图片...');
-            const crawlResults = await this.crawlReviewImages(results, 0, 1);
+            const crawlResults = await this.crawlReviewImages(results, 0, 15);
             
             // 将爬取结果合并到搜索结果中
             const enhancedResults = results.map((product, index) => {
@@ -1082,99 +1105,89 @@ class ImageSearchNode {
         }
 
         // 补偿轮次：处理需要补偿的商品
-        let compensationRound = 1;
-        while (compensationQueue.length > 0 && processedProductsCount < maxProducts) {
-            console.log(`\n🔄 开始第 ${compensationRound} 轮补偿爬取，队列中还有 ${compensationQueue.length} 个商品需要补偿`);
+        if (totalImagesCollected < judgeNum && compensationQueue.length > 0) {
+            console.log(`\n🔄 开始补偿爬取，总共获得 ${totalImagesCollected} 张图片，少于 ${judgeNum} 张`);
             
-            const currentCompensationQueue = [...compensationQueue]; // 复制当前队列
-            compensationQueue.length = 0; // 清空队列，准备下一轮
+            // 记录已处理的商品索引，避免重复
+            const processedIndices = new Set();
+            results.forEach(r => processedIndices.add(r.productIndex));
             
-            for (const compInfo of currentCompensationQueue) {
-                if (processedProductsCount >= maxProducts) {
-                    console.log(`⚠️ 已达到最大商品数量限制（${maxProducts}个），停止补偿`);
+            // 寻找新的商品进行补偿，而不是为每个补偿项都寻找
+            let nextIndex = Math.max(...Array.from(processedIndices)) + 1;
+            let compensationAttempts = 0;
+            const maxCompensationAttempts = 10; // 最多尝试10次补偿
+            
+            while (totalImagesCollected < judgeNum && 
+                   nextIndex < searchResults.length && 
+                   processedProductsCount < maxProducts &&
+                   compensationAttempts < maxCompensationAttempts) {
+                
+                const compensationProduct = searchResults[nextIndex];
+                if (compensationProduct && compensationProduct.link && !processedIndices.has(nextIndex)) {
+                    console.log(`\n🔄 补偿爬取第 ${nextIndex + 1} 个淘宝商品: ${compensationProduct.title || '未知商品'}`);
+                    console.log(`商品链接: ${compensationProduct.link}`);
+                    
+                    try {
+                        // 访问商品详情页
+                        console.log('访问商品详情页...');
+                        await this.page.goto(compensationProduct.link, { waitUntil: 'domcontentloaded' });
+                        await this.page.waitForTimeout(3000);
+                        
+                        // 检查登录状态
+                        const isLoggedIn = await this.checkLoginStatus();
+                        if (isLoggedIn) {
+                            console.log('登录状态正常');
+                        } else {
+                            console.log('登录状态异常，尝试重新登录');
+                            const reLoginResult = await this.checkLoginStatus();
+                            if (!reLoginResult) {
+                                console.log('重新登录失败，跳过此商品');
+                                nextIndex++;
+                                compensationAttempts++;
+                                continue;
+                            }
+                        }
+                        
+                        // 爬取此商品的评价图片URL（补偿商品也爬取20张）
+                        const compensationImageUrls = await this.crawlProductReviewImages(nextIndex + 1, imagesPerProduct);
+                        
+                        const compensationImagesCount = compensationImageUrls.length;
+                        totalImagesCollected += compensationImagesCount;
+                        processedProductsCount++;
+                        processedIndices.add(nextIndex);
+
+                        // 构建补偿结果
+                        const compensationResult = {
+                            productIndex: nextIndex,
+                            title: compensationProduct.title || `商品${nextIndex + 1}`,
+                            links: compensationImageUrls,
+                            imagesCount: compensationImagesCount,
+                            isCompensation: true
+                        };
+                        results.push(compensationResult);
+                        
+                        console.log(`🔄 补偿商品第 ${nextIndex + 1} 个爬取完成，获得 ${compensationImagesCount} 张图片`);
+
+                        // 检查是否已经达到目标数量
+                        if (totalImagesCollected >= judgeNum) {
+                            console.log(`补偿爬取完成，总共获得 ${totalImagesCollected} 张图片，已达到目标数量 ${judgeNum}`);
+                            break;
+                        }
+
+                    } catch (error) {
+                        console.log(`补偿爬取第 ${nextIndex + 1} 个商品时出错: ${error}`);
+                    }
+                }
+                
+                nextIndex++;
+                compensationAttempts++;
+                
+                // 如果已经尝试了足够多的补偿，停止
+                if (compensationAttempts >= maxCompensationAttempts) {
+                    console.log(`已达到最大补偿尝试次数 ${maxCompensationAttempts}，停止补偿爬取`);
                     break;
                 }
-                
-                // 寻找下一个可用的商品进行补偿
-                const nextIndex = Math.min(compInfo.originalIndex + 3 + compensationRound, searchResults.length - 1);
-                
-                if (nextIndex < searchResults.length) {
-                    const compensationProduct = searchResults[nextIndex];
-                    const compensationUrl = compensationProduct.link;
-                    
-                    if (compensationUrl) {
-                        console.log(`\n🔄 补偿爬取第 ${nextIndex + 1} 个淘宝商品: ${compensationProduct.title || '未知商品'}`);
-                        console.log(`商品链接: ${compensationUrl}`);
-                        
-                        try {
-                            // 访问商品详情页
-                            console.log('访问商品详情页...');
-                            await this.page.goto(compensationUrl, { waitUntil: 'domcontentloaded' });
-                            await this.page.waitForTimeout(3000);
-                            
-                            // 检查登录状态
-                            const isLoggedIn = await this.checkLoginStatus();
-                            if (isLoggedIn) {
-                                console.log('登录状态正常');
-                            } else {
-                                console.log('登录状态异常，尝试重新登录');
-                                const reLoginResult = await this.checkLoginStatus();
-                                if (!reLoginResult) {
-                                    console.log('重新登录失败，跳过此商品');
-                                    continue;
-                                }
-                            }
-                            
-                            // 爬取此商品的评价图片URL（补偿商品也爬取20张）
-                            const compensationImageUrls = await this.crawlProductReviewImages(nextIndex + 1, imagesPerProduct);
-                            
-                            const compensationImagesCount = compensationImageUrls.length;
-                            totalImagesCollected += compensationImagesCount;
-                            processedProductsCount++;
-                            
-                            // 检查补偿商品是否也需要补偿
-                            if (compensationImagesCount < judgeNum) {
-                                console.log(`⚠️ 补偿商品第 ${nextIndex + 1} 个也只获得 ${compensationImagesCount} 张图片，需要再次补偿`);
-                                compensationQueue.push({
-                                    originalIndex: compInfo.originalIndex,
-                                    originalProduct: compInfo.originalProduct,
-                                    collected: compInfo.collected + compensationImagesCount,
-                                    needed: judgeNum - (compInfo.collected + compensationImagesCount)
-                                });
-                            }
-                            
-                            // 构建补偿结果
-                            const compensationResult = {
-                                productIndex: nextIndex,
-                                title: compensationProduct.title || `商品${nextIndex + 1}`,
-                                links: compensationImageUrls,
-                                imagesCount: compensationImagesCount,
-                                isCompensation: true,
-                                compensatesFor: compInfo.originalIndex + 1,
-                                compensationRound: compensationRound
-                            };
-                            results.push(compensationResult);
-                            
-                            console.log(`🔄 第 ${nextIndex + 1} 个商品（第${compensationRound}轮补偿）爬取完成，获得 ${compensationImagesCount} 张图片`);
-                            console.log(`✅ 补偿了第 ${compInfo.originalIndex + 1} 个商品的不足（原 ${compInfo.collected} 张）`);
-                            
-                        } catch (error) {
-                            console.log(`补偿爬取第 ${nextIndex + 1} 个商品时出错: ${error}`);
-                            // 如果补偿失败，重新加入队列
-                            compensationQueue.push(compInfo);
-                            continue;
-                        }
-                    } else {
-                        console.log(`⚠️ 第 ${nextIndex + 1} 个商品没有有效链接，无法补偿`);
-                        // 重新加入队列，尝试下一个商品
-                        compensationQueue.push(compInfo);
-                    }
-                } else {
-                    console.log(`⚠️ 没有更多商品可用于补偿第 ${compInfo.originalIndex + 1} 个商品`);
-                }
             }
-            
-            compensationRound++;
         }
 
         // 统计最终结果
@@ -1187,10 +1200,11 @@ class ImageSearchNode {
         console.log(`   补偿商品数量: ${compensationProducts} 个`);
         console.log(`   总共处理商品数量: ${totalProducts} 个`);
         console.log(`   总共收集图片数量: ${totalImagesCollected} 张`);
-        console.log(`   补偿轮次: ${compensationRound - 1} 轮`);
         
-        if (compensationQueue.length > 0) {
-            console.log(`   未完成补偿的商品数量: ${compensationQueue.length} 个（已达到最大商品数量限制）`);
+        if (totalImagesCollected < judgeNum) {
+            console.log(`   未达到目标图片数量: ${totalImagesCollected}/${judgeNum} 张`);
+        } else {
+            console.log(`   已达到目标图片数量: ${totalImagesCollected}/${judgeNum} 张`);
         }
         
         return results;

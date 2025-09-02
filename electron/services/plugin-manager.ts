@@ -13,6 +13,10 @@ export interface PluginManifest {
     method: string
     jsFile: string
   }>
+  frontend?: {
+    devServerUrl?: string
+    entry?: string
+  }
 }
 
 export class PluginManager {

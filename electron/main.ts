@@ -4,6 +4,7 @@ import { windowManager } from './window'
 import { configManager } from './config'
 import TrackerUtil from './tracker-util'
 import { pluginManager } from './services/plugin-manager'
+import { staticServer } from './static-server'
 
 let tracker: TrackerUtil | null = null
 
@@ -13,6 +14,9 @@ async function startApp(): Promise<void> {
   console.log('[startApp] called')
   await app.whenReady()
   console.log('[startApp] app ready')
+  
+  // 启动插件静态服务器（开发/生产都启动，端口动态）
+  staticServer.start()
   
   // Tracker 登录上报
   const config = configManager.getConfig()

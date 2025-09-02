@@ -1,76 +1,308 @@
-/******/ (() => { // webpackBootstrap
-/******/ 	"use strict";
+// 淘宝好评图爬取插件 - Vue 3 版本
+const { createApp, ref, computed, onMounted, nextTick } = Vue;
 
-(function () {
     // 插件名称
     const pluginName = 'taobao-scraper-plugin';
     
-    // 状态管理
-    let isLoggedIn = false;
-    let selectedImage = null;
-    
-    // 获取DOM元素
-    const loginFrame = document.querySelector('#loginFrame');
-    const loginBadge = document.querySelector('#loginBadge');
-    const loginBtn = document.querySelector('#loginBtn');
-    const statusDot = document.querySelector('.status-dot');
-    const statusText = document.querySelector('.navbar-status span:last-child');
-    const uploadArea = document.querySelector('#uploadArea');
-    const searchBtn = document.querySelector('#searchBtn');
-    const stepIcons = document.querySelectorAll('.step-icon');
-    
-    // 登录按钮
-    if (loginBtn) {
-        loginBtn.onclick = async () => {
-            console.log('=== 开始登录流程 ===');
-            console.log('当前登录状态:', isLoggedIn);
+// 创建 Vue 应用
+const app = createApp({
+    setup() {
+        // 响应式状态
+        const isLoggedIn = ref(false);
+        const isLoggingIn = ref(false);
+        const is1688LoggedIn = ref(false);
+        const is1688LoggingIn = ref(false);
+        const currentPlatform = ref('taobao'); // 'taobao' 或 '1688'
+        const selectedImage = ref(null);
+        const skuId = ref(''); // 新增：SKU ID输入
+        const selectedImages = ref(new Set());
+        const selectedImageCount = ref(0);
+        const productGroups = ref([]);
+        const totalImages = ref(0);
+        
+        // 模态框状态
+        const showImageModal = ref(false);
+        const modalImageUrl = ref('');
+        const modalTitle = ref('');
+        
+        // 进度状态
+        const crawlProgress = ref({ current: 0, total: 0, status: 'not_started' });
+        const downloadProgress = ref({ current: 0, total: 0, status: 'not_started' });
+        
+        // 序列号计数器
+        let seq = 0;
+        
+        // 计算属性
+        const step1Class = computed(() => {
+            if (currentPlatform.value === 'taobao' && isLoggedIn.value) return 'completed';
+            if (currentPlatform.value === '1688' && is1688LoggedIn.value) return 'completed';
+            return 'active';
+        });
+        
+        const step1Text = computed(() => {
+            if (currentPlatform.value === 'taobao' && isLoggedIn.value) return '✓';
+            if (currentPlatform.value === '1688' && is1688LoggedIn.value) return '✓';
+            return '1';
+        });
+        
+        const step2Class = computed(() => {
+            const isPlatformLoggedIn = currentPlatform.value === 'taobao' ? isLoggedIn.value : is1688LoggedIn.value;
+            if (selectedImage.value && isPlatformLoggedIn) return 'active';
+            if (selectedImage.value) return 'completed';
+            return 'pending';
+        });
+        
+        const step2Text = computed(() => {
+            const isPlatformLoggedIn = currentPlatform.value === 'taobao' ? isLoggedIn.value : is1688LoggedIn.value;
+            if (selectedImage.value && isPlatformLoggedIn) return '2';
+            if (selectedImage.value) return '✓';
+            return '2';
+        });
+        
+        const step3Class = computed(() => {
+            if (crawlProgress.value.status === 'completed') return 'completed';
+            if (crawlProgress.value.status === 'processing') return 'active';
+            return 'pending';
+        });
+        
+        const step3Text = computed(() => {
+            if (crawlProgress.value.status === 'completed') return '✓';
+            if (crawlProgress.value.status === 'processing') return '3';
+            return '3';
+        });
+        
+        const crawlProgressText = computed(() => {
+            const { current, total, status } = crawlProgress.value;
+            if (status === 'not_started') return '未开始';
+            if (status === 'processing') return '进行中';
+            if (status === 'completed') return `爬取完成：${current}/${total}`;
+            if (status === 'error') return '失败';
+            return '未开始';
+        });
+        
+        const crawlProgressWidth = computed(() => {
+            const { current, total } = crawlProgress.value;
+            return total > 0 ? `${(current / total * 100)}%` : '0%';
+        });
+        
+        const crawlProgressClass = computed(() => {
+            return crawlProgress.value.status;
+        });
+        
+        const downloadProgressText = computed(() => {
+            const { current, total, status } = downloadProgress.value;
+            if (status === 'not_started') return '未开始';
+            if (status === 'processing') return '进行中';
+            if (status === 'completed') return '已完成';
+            if (status === 'error') return '失败';
+            return '未开始';
+        });
+        
+        const downloadProgressWidth = computed(() => {
+            const { current, total } = downloadProgress.value;
+            return total > 0 ? `${(current / total * 100)}%` : '0%';
+        });
+        
+        const downloadProgressClass = computed(() => {
+            return downloadProgress.value.status;
+        });
+        
+        const downloadAllText = computed(() => {
+            return selectedImageCount.value > 0 ? `全部下载(${selectedImageCount.value})` : '全部下载';
+        });
+        
+        // 通知函数
+        const showNotification = (message, type = 'info') => {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
             
-            if (isLoggedIn) {
-                console.log('用户已登录，跳过登录流程');
-                showNotification('已经登录了', 'info');
-                return;
-            }
+            document.body.appendChild(notification);
             
-            // 显示加载状态
-            loginBtn.disabled = true;
-            const originalText = loginBtn.innerHTML;
-            loginBtn.innerHTML = '<span class="spinner"></span> 登录中...';
-            loginFrame.innerHTML = '<div style="text-align: center; color: #737373;">正在启动浏览器...</div>';
+            setTimeout(() => {
+                notification.classList.add('show');
+            }, 100);
             
-            try {
-                const response = await window.electronAPI.eventBus.trigger('taobao-login', {}, pluginName);
-                console.log('登录调用结果:', response);
+            setTimeout(() => {
+                notification.classList.remove('show');
+                setTimeout(() => {
+                    document.body.removeChild(notification);
+                }, 300);
+            }, 3000);
+        };
+        
+        // 更新爬取进度
+        const updateCrawlProgress = (current, total, status) => {
+            crawlProgress.value = { current, total, status };
+        };
+        
+        // 更新下载进度
+        const updateDownloadProgress = (current, total, status) => {
+            downloadProgress.value = { current, total, status };
+        };
+        
+        // 通过 postMessage 调用事件
+        const triggerEvent = async (eventType, params = {}) => {
+            return new Promise((resolve, reject) => {
+                const id = ++seq;
+                const timeout = setTimeout(() => {
+                    reject(new Error('请求超时'));
+                }, 600000);
                 
-                // 正确解析嵌套的响应结构
-                if (response.success && response.result && response.result.success) {
-                    console.log('登录成功，更新状态');
-                    updateLoginStatus(true);
-                    showNotification('登录成功', 'success');
-                    loginFrame.innerHTML = '<div style="text-align: center; color: #10b981;">✓ 登录成功</div>';
-                } else {
-                    const errorMessage = response.result?.message || response.message || '登录失败';
-                    console.log('登录失败:', errorMessage);
-                    showNotification('登录失败: ' + errorMessage, 'error');
-                    resetLoginUI();
+                const messageHandler = (event) => {
+                    const data = event.data || {};
+                    if (data.source === 'host' && data.id === id) {
+                        window.removeEventListener('message', messageHandler);
+                        clearTimeout(timeout);
+                        
+                        if (data.success) {
+                            resolve(data.result);
+                        } else {
+                            reject(new Error(data.error || '未知错误'));
+                        }
+                    }
+                };
+                
+                window.addEventListener('message', messageHandler);
+                
+                window.parent.postMessage({
+                    source: 'plugin-frontend',
+                    action: 'trigger-event',
+                    id,
+                    payload: { eventType, params }
+                }, '*');
+            });
+        };
+        
+        // 通过 postMessage 调用 IPC
+        const invokeIpc = async (channel, args = []) => {
+            console.log('[invokeIpc] Calling channel:', channel, 'with args:', args);
+            return new Promise((resolve, reject) => {
+                const id = ++seq;
+                const timeout = setTimeout(() => {
+                    reject(new Error('请求超时'));
+                }, 600000);
+                
+                const messageHandler = (event) => {
+                    const data = event.data || {};
+                    if (data.source === 'host' && data.id === id) {
+                        console.log('[invokeIpc] Received response for id:', id, 'data:', data);
+                        window.removeEventListener('message', messageHandler);
+                        clearTimeout(timeout);
+                        
+                        if (data.success) {
+                            resolve(data.result);
+                        } else {
+                            reject(new Error(data.error || '未知错误'));
+                        }
+                    }
+                };
+                
+                window.addEventListener('message', messageHandler);
+                
+                window.parent.postMessage({
+                    source: 'plugin-frontend',
+                    action: 'ipc-invoke',
+                    id,
+                    payload: { channel, args }
+                }, '*');
+            });
+        };
+        
+        // 检查登录状态
+        const checkLoginStatus = async () => {
+            try {
+                const response = await triggerEvent('taobao-login-check', {});
+                console.log('登录状态检查结果:', response);
+                const loggedIn = response.success && response.result && response.result.success;
+                isLoggedIn.value = loggedIn;
+                
+                if (loggedIn) {
+                    showNotification('已登录淘宝', 'success');
                 }
             } catch (error) {
-                console.error('登录失败:', error);
-                showNotification('登录失败', 'error');
-                resetLoginUI();
-            } finally {
-                loginBtn.disabled = false;
-                loginBtn.innerHTML = originalText;
+                console.error('检查登录状态失败:', error);
+                isLoggedIn.value = false;
             }
         };
-    }
-    
-    // 文件上传区域
-    if (uploadArea) {
-        uploadArea.onclick = async () => {
+        
+        // 开始登录
+        const startLogin = async () => {
+            if (isLoggingIn.value) return;
+            
+            isLoggingIn.value = true;
+            showNotification('正在启动淘宝登录流程...', 'info');
+            
             try {
-                const filePath = await window.electronAPI.selectFile();
+                const response = await triggerEvent('taobao-login', {});
+                console.log('淘宝登录响应:', response);
+                
+                if (response.success && response.result && response.result.success) {
+                    isLoggedIn.value = true;
+                    currentPlatform.value = 'taobao';
+                    showNotification('淘宝登录成功！', 'success');
+                } else {
+                    const errorMsg = response.result?.message || response.error || '登录失败';
+                    showNotification(errorMsg, 'error');
+                }
+            } catch (error) {
+                console.error('淘宝登录失败:', error);
+                showNotification('淘宝登录失败: ' + error.message, 'error');
+            } finally {
+                isLoggingIn.value = false;
+            }
+        };
+
+        // 开始1688登录
+        const start1688Login = async () => {
+            if (is1688LoggingIn.value) return;
+            
+            is1688LoggingIn.value = true;
+            showNotification('正在启动1688登录流程...', 'info');
+            
+            try {
+                // 启动1688登录流程（包含等待登录完成）
+                const loginResponse = await triggerEvent('1688-login', {});
+                console.log('1688登录响应:', loginResponse);
+                
+                if (loginResponse.success && loginResponse.result && loginResponse.result.success) {
+                        is1688LoggedIn.value = true;
+                        currentPlatform.value = '1688';
+                        showNotification('1688登录成功！', 'success');
+                } else {
+                    const errorMsg = loginResponse.result?.message || loginResponse.error || '登录失败';
+                    showNotification(errorMsg, 'error');
+                }
+            } catch (error) {
+                console.error('1688登录失败:', error);
+                showNotification('1688登录失败: ' + error.message, 'error');
+            } finally {
+                is1688LoggingIn.value = false;
+            }
+        };
+
+        // 切换平台
+        const switchPlatform = (platform) => {
+            currentPlatform.value = platform;
+            // 清空之前的选择和结果
+            selectedImage.value = null;
+            skuId.value = ''; // 清空SKU ID
+            selectedImages.value.clear();
+            selectedImageCount.value = 0;
+            productGroups.value = [];
+            totalImages.value = 0;
+            updateCrawlProgress(0, 0, 'not_started');
+            updateDownloadProgress(0, 0, 'not_started');
+            showNotification(`已切换到${platform === 'taobao' ? '淘宝' : '1688'}平台`, 'info');
+        };
+    
+        // 选择图片
+        const selectImage = async () => {
+            try {
+                const filePath = await invokeIpc('select-file');
                 if (filePath) {
-                    handleImageSelected(filePath);
+                    selectedImage.value = filePath;
+                    showNotification('图片选择成功', 'success');
                 }
             } catch (error) {
                 console.error('选择图片失败:', error);
@@ -78,67 +310,57 @@
             }
         };
         
-        uploadArea.ondragover = (e) => {
-            e.preventDefault();
-            uploadArea.style.borderColor = '#0066ff';
-        };
-        
-        uploadArea.ondragleave = () => {
-            uploadArea.style.borderColor = '#e5e5e5';
-        };
-        
-        uploadArea.ondrop = (e) => {
-            e.preventDefault();
-            uploadArea.style.borderColor = '#e5e5e5';
-            const files = e.dataTransfer?.files;
-            if (files && files.length > 0) {
-                const file = files[0];
-                if (file.type.startsWith('image/')) {
-                    handleImageSelected(file.path || file.name);
-                } else {
-                    showNotification('请选择图片文件', 'warning');
-                }
-            }
-        };
-    }
-    
-    // 搜索按钮
-    if (searchBtn) {
-        searchBtn.onclick = async () => {
-            if (!selectedImage) {
-                showNotification('请先选择图片', 'warning');
-                return;
-            }
-            if (!isLoggedIn) {
-                showNotification('请先登录淘宝', 'warning');
+        // 开始搜索
+        const startSearch = async () => {
+            console.log('=== startSearch 开始 ===');
+            console.log('selectedImage.value:', selectedImage.value);
+            console.log('skuId.value:', skuId.value);
+            
+            if (!selectedImage.value && !skuId.value) {
+                showNotification('请选择图片或输入SKU ID', 'warning');
                 return;
             }
             
-            // 显示加载状态
-            searchBtn.disabled = true;
-            const originalText = searchBtn.innerHTML;
-            searchBtn.innerHTML = '<span class="spinner"></span> 搜索中...';
+            // 验证SKU ID格式
+            if (skuId.value && !/^\d+$/.test(skuId.value.trim())) {
+                showNotification('SKU ID必须是纯数字，如：866648458353', 'warning');
+                return;
+            }
             
-            // 更新步骤指示器
-            stepIcons[1].classList.remove('active');
-            stepIcons[1].classList.add('completed');
-            stepIcons[1].textContent = '✓';
-            stepIcons[2].classList.add('active');
+            // 检查当前平台的登录状态
+            const isPlatformLoggedIn = currentPlatform.value === 'taobao' ? isLoggedIn.value : is1688LoggedIn.value;
+            if (!isPlatformLoggedIn) {
+                showNotification(`请先登录${currentPlatform.value === 'taobao' ? '淘宝' : '1688'}`, 'warning');
+                return;
+            }
             
+            // 更新爬取进度为进行中
+            updateCrawlProgress(0, 1, 'processing');
+                
             try {
-                // 开始爬取进度 - 立即切换到进行中状态
-                console.log('开始搜索，切换爬取进度为进行中');
-                updateCrawlProgress(0, 1, 'processing');
+                const eventType = currentPlatform.value === 'taobao' ? 'image-search' : '1688-image-search';
                 
-                // 执行图片搜索
-                const searchResult = await window.electronAPI.eventBus.trigger('image-search', { args: [selectedImage] }, pluginName);
-                console.log('搜索结果:', searchResult);
+                // 构建搜索参数
+                let searchParams = {};
+                if (selectedImage.value) {
+                    // 如果有图片，第一个参数是图片路径，第二个参数是skuId（如果有的话）
+                    searchParams.args = [selectedImage.value];
+                    if (skuId.value && skuId.value.trim()) {
+                        searchParams.args.push(skuId.value.trim());
+                    }
+                } else if (skuId.value && skuId.value.trim()) {
+                    // 如果只有SKU ID，第一个参数是null（表示没有图片），第二个参数是skuId
+                    searchParams.args = [null, skuId.value.trim()];
+                }
                 
-                // 解析搜索结果
+                console.log('searchParams', searchParams);
+                
+                const searchResult = await triggerEvent(eventType, searchParams);
+                console.log(`${currentPlatform.value}搜索结果:`, searchResult);
+                
                 let parsedResult = null;
                 try {
                     if (searchResult.success && searchResult.result) {
-                        // 如果result是JSON字符串，需要解析
                         if (typeof searchResult.result === 'string') {
                             parsedResult = JSON.parse(searchResult.result);
                         } else {
@@ -151,293 +373,100 @@
                 }
                 
                 if (parsedResult && parsedResult.success && parsedResult.data && parsedResult.data.length > 0) {
-                    // 搜索成功 - 更新爬取进度为完成
-                    console.log('搜索成功，切换爬取进度为已完成');
-                    const totalProducts = parsedResult.data.length; // 商品数量
-                    const totalImages = parsedResult.data.reduce((sum, product) => sum + (product.img_urls?.length || 0), 0);
+                    // 过滤掉没有图片的商品
+                    const productsWithImages = parsedResult.data.filter(product => 
+                        product.img_urls && product.img_urls.length > 0
+                    );
                     
-                    // 更新爬取进度：显示爬取完成的商品数量
+                    if (productsWithImages.length === 0) {
+                        updateCrawlProgress(0, 1, 'error');
+                        showNotification('搜索成功，但没有找到包含图片的商品', 'warning');
+                        return;
+                    }
+                    
+                    const totalProducts = productsWithImages.length;
+                    const totalImages = productsWithImages.reduce((sum, product) => sum + (product.img_urls?.length || 0), 0);
+                    
                     updateCrawlProgress(totalProducts, totalProducts, 'completed');
-                    
-                    // 下载进度保持未开始状态
                     updateDownloadProgress(0, 0, 'not_started');
                     
-                    showNotification(`搜索成功，找到 ${totalProducts} 个商品，共 ${totalImages} 张图片`, 'success');
-                    
-                                    // 显示图片展示
-                displayImageGallery(parsedResult);
+                    showNotification(`搜索成功，找到 ${totalProducts} 个有图片的商品，共 ${totalImages} 张图片`, 'success');
+                    displayImageGallery(parsedResult);
                 } else {
-                    // 搜索失败或未找到结果
-                    console.log('搜索失败，切换爬取进度为失败');
                     updateCrawlProgress(0, 1, 'error');
                     showNotification('未找到相关商品', 'warning');
                 }
+                
             } catch (error) {
                 console.error('搜索失败:', error);
-                // 搜索失败 - 更新爬取进度为错误状态
                 updateCrawlProgress(1, 1, 'error');
                 showNotification('搜索失败: ' + error.message, 'error');
-            } finally {
-                searchBtn.disabled = false;
-                searchBtn.innerHTML = originalText;
             }
         };
-    }
-    
-    // 侧边栏导航
-    document.querySelectorAll('.sidebar-item').forEach(item => {
-        item.onclick = (e) => {
-            document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
-            e.target.classList.add('active');
-        };
-    });
-    
-    // 图片选择相关函数
-    let selectedImageCount = 0; // 全局选择计数器
-    
-    window.toggleImageSelection = function(imageCard) {
-        const selectedImages = window.selectedImages || new Set();
-        const imageUrl = imageCard.dataset.imageUrl;
-        const imageTitle = imageCard.dataset.imageTitle;
-        const imageIndex = parseInt(imageCard.dataset.imageIndex);
-        const productId = imageCard.dataset.productId;
         
-        // 创建图片标识符
-        const imageKey = `${productId}-${imageIndex}`;
-        
-        if (selectedImages.has(imageKey)) {
-            // 取消选择
-            selectedImages.delete(imageKey);
-            imageCard.classList.remove('selected');
-            selectedImageCount--;
+        // 显示图片画廊
+        const displayImageGallery = (parsedResult) => {
+            const products = parsedResult.data || [];
             
-            // 移除选择标记
-            const selectionBadge = imageCard.querySelector('.selection-badge');
-            if (selectionBadge) {
-                selectionBadge.remove();
+            // 过滤掉没有图片的商品，只显示有图片的商品
+            const productsWithImages = products.filter(product => 
+                product.img_urls && product.img_urls.length > 0
+            );
+            
+            if (productsWithImages.length === 0) {
+                showNotification('没有找到包含图片的商品', 'warning');
+                return;
             }
+            
+            productGroups.value = productsWithImages.map((product, index) => ({
+                productId: index,
+                productTitle: product.title || `商品${index + 1}`,
+                productLink: product.url || '',
+                images: (product.img_urls || []).map((url, imgIndex) => ({
+                    url,
+                    index: imgIndex
+                }))
+            }));
+            
+            totalImages.value = productGroups.value.reduce((sum, group) => sum + group.images.length, 0);
+            selectedImages.value.clear();
+            selectedImageCount.value = 0;
+            
+            showNotification(`已加载 ${productGroups.value.length} 个商品的图片，共 ${totalImages.value} 张图片`, 'success');
+        };
+        
+        // 切换图片选择状态
+        const toggleImageSelection = (productId, imageIndex) => {
+            const key = `${productId}-${imageIndex}`;
+            if (selectedImages.value.has(key)) {
+                selectedImages.value.delete(key);
         } else {
-            // 选择图片
-            selectedImages.add(imageKey);
-            imageCard.classList.add('selected');
-            selectedImageCount++;
-            
-            // 添加选择标记（显示选择顺序）
-            const selectionBadge = document.createElement('div');
-            selectionBadge.className = 'selection-badge';
-            selectionBadge.textContent = selectedImageCount;
-            imageCard.appendChild(selectionBadge);
-        }
-        
-        updateDownloadButtons();
-        updateProductDownloadButtons();
-        console.log('图片选择状态更新:', { selectedCount: selectedImageCount, selectedImages: Array.from(selectedImages) });
-    };
-    
-
-    
-    // 更新下载按钮显示
-    function updateDownloadButtons() {
-        const selectedImages = window.selectedImages || new Set();
-        const downloadAllBtn = document.getElementById('downloadAllBtn');
-        const clearAllSelectionBtn = document.getElementById('clearAllSelectionBtn');
-        const downloadButtons = document.getElementById('downloadButtons');
-        
-        if (selectedImages.size > 0) {
-            // 有选中图片时，显示数量
-            downloadAllBtn.textContent = `全部下载(${selectedImages.size})`;
-            clearAllSelectionBtn.style.display = 'inline-block';
-        } else {
-            // 没有选中图片时，显示默认文本
-            downloadAllBtn.textContent = '全部下载';
-            clearAllSelectionBtn.style.display = 'none';
-        }
-        
-        // 显示下载按钮区域
-        downloadButtons.style.display = 'flex';
-    }
-    
-    // 更新商品下载按钮显示
-    function updateProductDownloadButtons() {
-        const selectedImages = window.selectedImages || new Set();
-        const productGroups = window.productGroups || [];
-        
-        productGroups.forEach(group => {
-            const downloadBtn = document.getElementById(`downloadProductBtn_${group.productId}`);
-            const clearBtn = document.getElementById(`clearProductSelectionBtn_${group.productId}`);
-            
-            if (downloadBtn && clearBtn) {
-                // 计算当前商品选中的图片数量
-                const productSelectedCount = Array.from(selectedImages).filter(imageKey => {
-                    const [productId] = imageKey.split('-');
-                    return productId == group.productId;
-                }).length;
-                
-                if (productSelectedCount > 0) {
-                    downloadBtn.textContent = `下载此商品图片(${productSelectedCount})`;
-                    clearBtn.style.display = 'inline-block';
-                } else {
-                    downloadBtn.textContent = '下载此商品图片';
-                    clearBtn.style.display = 'none';
-                }
+                selectedImages.value.add(key);
             }
-        });
-    }
-    
-    // 获取选中的图片数据（按选择顺序）
-    function getSelectedImageData() {
-        const selectedImages = window.selectedImages || new Set();
-        const productGroups = window.productGroups || [];
-        const selectedImageData = [];
-        
-        // 按照选择顺序（角标数字）排序
-        const imageCards = document.querySelectorAll('.image-card.selected');
-        const sortedCards = Array.from(imageCards).sort((a, b) => {
-            const badgeA = a.querySelector('.selection-badge');
-            const badgeB = b.querySelector('.selection-badge');
-            if (badgeA && badgeB) {
-                return parseInt(badgeA.textContent) - parseInt(badgeB.textContent);
-            }
-            return 0;
-        });
-        
-        sortedCards.forEach(card => {
-            const productId = card.dataset.productId;
-            const imageIndex = parseInt(card.dataset.imageIndex);
-            const productGroup = productGroups.find(group => group.productId == productId);
-            if (productGroup && productGroup.images[imageIndex]) {
-                // 只传递必要的字段，不包含productTitle
-                const imageData = {
-                    url: productGroup.images[imageIndex].url,
-                    index: productGroup.images[imageIndex].index
-                };
-                selectedImageData.push(imageData);
-            }
-        });
-        
-        return selectedImageData;
-    }
-    
-    // 获取指定商品的选中图片数据（按选择顺序）
-    function getSelectedImageDataByProduct(productId) {
-        const selectedImages = window.selectedImages || new Set();
-        const productGroups = window.productGroups || [];
-        const selectedImageData = [];
-        
-        // 按照选择顺序（角标数字）排序
-        const imageCards = document.querySelectorAll(`[data-product-id="${productId}"].image-card.selected`);
-        const sortedCards = Array.from(imageCards).sort((a, b) => {
-            const badgeA = a.querySelector('.selection-badge');
-            const badgeB = b.querySelector('.selection-badge');
-            if (badgeA && badgeB) {
-                return parseInt(badgeA.textContent) - parseInt(badgeB.textContent);
-            }
-            return 0;
-        });
-        
-        sortedCards.forEach(card => {
-            const imageIndex = parseInt(card.dataset.imageIndex);
-            const productGroup = productGroups.find(group => group.productId == productId);
-            if (productGroup && productGroup.images[imageIndex]) {
-                // 只传递必要的字段，不包含productTitle
-                const imageData = {
-                    url: productGroup.images[imageIndex].url,
-                    index: productGroup.images[imageIndex].index
-                };
-                selectedImageData.push(imageData);
-            }
-        });
-        
-        return selectedImageData;
-    }
-    
-    // 清除所有选择
-    window.clearAllSelection = function() {
-        const imageCards = document.querySelectorAll('.image-card');
-        imageCards.forEach(card => {
-            card.classList.remove('selected');
-            const selectionBadge = card.querySelector('.selection-badge');
-            if (selectionBadge) {
-                selectionBadge.remove();
-            }
-        });
-        window.selectedImages = new Set();
-        selectedImageCount = 0;
-        updateDownloadButtons();
-        updateProductDownloadButtons();
-        showNotification('已清除所有选择', 'info');
-    };
-    
-    // 清除指定商品的选择
-    window.clearProductSelection = function(productId) {
-        const imageCards = document.querySelectorAll(`[data-product-id="${productId}"]`);
-        imageCards.forEach(card => {
-            card.classList.remove('selected');
-            const selectionBadge = card.querySelector('.selection-badge');
-            if (selectionBadge) {
-                selectionBadge.remove();
-            }
-        });
-        
-        // 从选中集合中移除该商品的所有图片
-        const selectedImages = window.selectedImages || new Set();
-        const keysToRemove = Array.from(selectedImages).filter(imageKey => {
-            const [pid] = imageKey.split('-');
-            return pid == productId;
-        });
-        
-        keysToRemove.forEach(key => {
-            selectedImages.delete(key);
-            selectedImageCount--;
-        });
-        
-        updateDownloadButtons();
-        updateProductDownloadButtons();
-        showNotification('已清除该商品的选择', 'info');
-    };
-    
-        function bindDownloadButtons() {
-        const downloadAllBtn = document.getElementById('downloadAllBtn');
-        
-        // 全部下载按钮
-        downloadAllBtn.onclick = () => {
-            const selectedImageData = getSelectedImageData();
-            const allImages = window.allImages || [];
-            
-            if (selectedImageData.length > 0) {
-                // 如果有选中的图片，下载选中的图片
-                console.log('下载选中的图片，切换下载进度为进行中');
-                downloadImages(selectedImageData);
-            } else if (allImages.length > 0) {
-                // 如果没有选中的图片，下载所有图片
-                console.log('下载全部图片，切换下载进度为进行中');
-                downloadImages(allImages);
-            }
+            selectedImageCount.value = selectedImages.value.size;
         };
         
-        // 清除所有选择按钮
-        const clearAllSelectionBtn = document.getElementById('clearAllSelectionBtn');
-        if (clearAllSelectionBtn) {
-            clearAllSelectionBtn.onclick = () => {
-                clearAllSelection();
-            };
-        }
-    }
-    
-    window.handleImageError = function(img) {
-        const container = img.parentElement;
-        container.innerHTML = `
-            <div class="image-error">
-                <div class="image-error-icon">⚠️</div>
-                <div>图片加载失败</div>
-            </div>
-        `;
-    };
-    
-
-    
-    // ZIP打包下载方法 - 使用Electron API
-    window.downloadImagesAsZip = async function(images) {
+        // 检查图片是否被选中
+        const isImageSelected = (productId, imageIndex) => {
+            return selectedImages.value.has(`${productId}-${imageIndex}`);
+        };
+        
+        // 全选/取消全选
+        const toggleSelectAll = () => {
+            if (selectedImages.value.size === totalImages.value) {
+                selectedImages.value.clear();
+            } else {
+                productGroups.value.forEach(group => {
+                    group.images.forEach((_, index) => {
+                        selectedImages.value.add(`${group.productId}-${index}`);
+                    });
+                });
+            }
+            selectedImageCount.value = selectedImages.value.size;
+        };
+        
+        // 下载图片
+        const downloadImages = async (images) => {
         if (!images || images.length === 0) {
             showNotification('没有图片可下载', 'warning');
             return;
@@ -446,19 +475,15 @@
         console.log('开始ZIP打包下载图片:', images);
         showNotification(`开始打包下载 ${images.length} 张图片`, 'success');
         
-        // 更新下载进度为进行中
         updateDownloadProgress(0, images.length, 'processing');
         
         try {
-            // 调用Electron的ZIP下载API
-            const result = await window.electronAPI.downloadImagesAsZip(images);
+                const result = await invokeIpc('download-images-as-zip', images);
             
             if (result.success) {
-                // 更新进度为完成
                 updateDownloadProgress(images.length, images.length, 'completed');
                 showNotification('ZIP文件下载完成！', 'success');
             } else {
-                // 更新进度为失败
                 updateDownloadProgress(0, images.length, 'error');
                 showNotification('ZIP打包下载失败: ' + (result.error || '未知错误'), 'error');
             }
@@ -470,38 +495,18 @@
         }
     };
     
-    // 统一的下载方法 - 支持单个或多个图片下载
-    window.downloadImages = function(images) {
-        if (!images || images.length === 0) {
-            showNotification('没有图片可下载', 'warning');
-            return;
-        }
-        
-        // 使用ZIP打包下载
-        downloadImagesAsZip(images);
-    };
-    
-
-    
-    window.downloadProductImages = function(productLink, productTitle) {
+        // 下载商品图片
+        const downloadProductImages = (productLink, productTitle) => {
         console.log('下载商品图片:', productLink, productTitle);
         
-        // 找到对应商品的图片
-        const productGroups = window.productGroups || [];
-        const targetGroup = productGroups.find(group => group.productTitle === productTitle);
+            const targetGroup = productGroups.value.find(group => group.productTitle === productTitle);
         
         if (targetGroup && targetGroup.images.length > 0) {
-            // 获取该商品选中的图片
             const selectedImageData = getSelectedImageDataByProduct(targetGroup.productId);
             
             if (selectedImageData.length > 0) {
-                // 如果有选中的图片，下载选中的图片
-                console.log(`下载商品 ${productTitle} 选中的图片，切换下载进度为进行中`);
                 downloadImages(selectedImageData);
             } else {
-                // 如果没有选中的图片，下载该商品的所有图片
-                console.log(`下载商品 ${productTitle} 的所有图片，切换下载进度为进行中`);
-                // 处理图片数据，移除productTitle字段
                 const processedImages = targetGroup.images.map(image => ({
                     url: image.url,
                     index: image.index
@@ -513,663 +518,234 @@
         }
     };
 
-    // 图片模态框相关函数
-    let currentModalImage = null;
-
-    window.openImageModal = function(imageUrl, imageTitle, imageIndex) {
-        console.log('打开图片模态框:', imageUrl, imageTitle, imageIndex);
-        
-        const modal = document.getElementById('imageModal');
-        const modalImage = document.getElementById('modalImage');
-        const modalTitle = document.getElementById('modalTitle');
-        
-        if (!modal || !modalImage || !modalTitle) {
-            console.error('模态框元素未找到');
-            return;
-        }
-        
-        currentModalImage = {
-            url: imageUrl,
-            title: imageTitle,
-            index: imageIndex
+        // 获取选中图片数据
+        const getSelectedImageDataByProduct = (productId) => {
+            const selectedArray = Array.from(selectedImages.value);
+            const selectedImageData = [];
+            
+            // 筛选出指定商品的图片，并按索引排序
+            const productImages = selectedArray
+                .filter(imageKey => {
+                    const [pid] = imageKey.split('-');
+                    return pid == productId;
+                })
+                .sort((a, b) => {
+                    const [, imgIdxA] = a.split('-');
+                    const [, imgIdxB] = b.split('-');
+                    return parseInt(imgIdxA) - parseInt(imgIdxB);
+                });
+            
+            productImages.forEach(imageKey => {
+                const [, imageIndex] = imageKey.split('-');
+                const productGroup = productGroups.value.find(group => group.productId == productId);
+                if (productGroup && productGroup.images[imageIndex]) {
+                    selectedImageData.push({
+                        url: productGroup.images[imageIndex].url,
+                        index: selectedImageData.length  // 使用数组长度作为索引
+                    });
+                }
+            });
+            
+            return selectedImageData;
         };
         
-        modalImage.src = imageUrl;
-        modalTitle.textContent = `${imageTitle} - 图片${imageIndex + 1}`;
-        
-        // 先显示模态框
-        modal.style.display = 'flex';
-        
-        // 然后添加显示动画
-        requestAnimationFrame(() => {
-            modal.classList.add('show');
-        });
-        
-        // 阻止背景滚动
+        // 打开图片模态框
+        const openImageModal = (imageUrl, imageTitle, imageIndex) => {
+            modalImageUrl.value = imageUrl;
+            modalTitle.value = `${imageTitle} - 图片${imageIndex + 1}`;
+            showImageModal.value = true;
         document.body.style.overflow = 'hidden';
+        };
         
-        console.log('模态框已打开');
-    };
-
-    window.openImageModalFromData = function(imageCard) {
-        console.log('从data属性打开图片模态框:', imageCard);
-        
-        if (!imageCard) {
-            console.error('图片卡片元素未找到');
-            return;
-        }
-        
-        const imageUrl = imageCard.dataset.imageUrl;
-        const imageTitle = imageCard.dataset.imageTitle;
-        const imageIndex = parseInt(imageCard.dataset.imageIndex);
-        
-        console.log('从data属性获取的数据:', { 
-            imageUrl, 
-            imageTitle, 
-            imageIndex,
-            dataset: imageCard.dataset 
-        });
-        
-        if (!imageUrl || !imageTitle) {
-            console.error('图片数据不完整:', { imageUrl, imageTitle, imageIndex });
-            return;
-        }
-        
-        console.log('图片数据完整，准备打开模态框');
-        
-        // 调用原有的打开模态框函数
-        openImageModal(imageUrl, imageTitle, imageIndex);
-    };
-
-    window.closeImageModal = function() {
-        console.log('关闭图片模态框');
-        
-        const modal = document.getElementById('imageModal');
-        if (!modal) return;
-        
-        modal.classList.remove('show');
-        
-        setTimeout(() => {
-            modal.style.display = 'none';
+        // 关闭图片模态框
+        const closeImageModal = () => {
+            showImageModal.value = false;
             document.body.style.overflow = 'auto';
-        }, 300);
+        };
         
-        currentModalImage = null;
-    };
-
-
-
-    // 拖拽排序相关函数
-    function initializeDragAndDrop() {
-        const imageCards = document.querySelectorAll('.image-card');
-        const productGrids = document.querySelectorAll('.product-images-grid');
+        // 图片加载失败处理
+        const handleImageError = () => {
+            // 图片加载失败处理
+        };
         
-        console.log('初始化拖拽功能，找到图片卡片:', imageCards.length, '个，商品网格:', productGrids.length, '个');
+        // 获取文件名
+        const getFileName = (path) => {
+            return path.split('/').pop() || path.split('\\').pop();
+        };
         
-        imageCards.forEach(card => {
-            card.addEventListener('dragstart', handleDragStart);
-            card.addEventListener('dragend', handleDragEnd);
-        });
+        // 获取图片选择顺序
+        const getImageSelectionOrder = (productId, imageIndex) => {
+            const imageKey = `${productId}-${imageIndex}`;
+            const selectedArray = Array.from(selectedImages.value);
+            const index = selectedArray.indexOf(imageKey);
+            return index + 1;
+        };
         
-        productGrids.forEach(grid => {
-            grid.addEventListener('dragover', handleDragOver);
-            grid.addEventListener('drop', handleDrop);
-            grid.addEventListener('dragenter', handleDragEnter);
-            grid.addEventListener('dragleave', handleDragLeave);
-        });
-    }
-
-    function handleDragStart(e) {
-        e.target.classList.add('dragging');
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/html', e.target.outerHTML);
+        // 获取商品选中数量
+        const getProductSelectedCount = (productId) => {
+            return Array.from(selectedImages.value).filter(imageKey => {
+                const [pid] = imageKey.split('-');
+                return pid == productId;
+            }).length;
+        };
         
-        // 存储拖拽的图片信息
-        const productId = e.target.dataset.productId;
-        const imageIndex = e.target.dataset.imageIndex;
-        e.dataTransfer.setData('application/json', JSON.stringify({
-            productId: productId,
-            imageIndex: imageIndex
-        }));
-    }
-
-    function handleDragEnd(e) {
-        e.target.classList.remove('dragging');
-    }
-
-    function handleDragOver(e) {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-    }
-
-    function handleDragEnter(e) {
-        e.preventDefault();
-        e.currentTarget.classList.add('drag-over');
-    }
-
-    function handleDragLeave(e) {
-        e.currentTarget.classList.remove('drag-over');
-    }
-
-    function handleDrop(e) {
-        e.preventDefault();
-        e.currentTarget.classList.remove('drag-over');
+        // 获取商品下载文本
+        const getProductDownloadText = (productId) => {
+            const count = getProductSelectedCount(productId);
+            return count > 0 ? `下载此商品图片(${count})` : '下载此商品图片';
+        };
         
-        const draggedData = e.dataTransfer.getData('application/json');
-        if (!draggedData) {
-            console.log('没有拖拽数据');
-            return;
-        }
+        // 清除所有选择
+        const clearAllSelection = () => {
+            selectedImages.value.clear();
+            selectedImageCount.value = 0;
+            showNotification('已清除所有选择', 'info');
+        };
         
-        try {
-            const { productId: sourceProductId, imageIndex: sourceImageIndex } = JSON.parse(draggedData);
-            const targetGrid = e.currentTarget;
-            const targetProductId = targetGrid.dataset.productId;
-            
-            console.log('拖拽数据:', { sourceProductId, sourceImageIndex, targetProductId });
-            
-            // 获取拖拽的目标位置
-            const targetCard = e.target.closest('.image-card');
-            if (!targetCard) {
-                console.log('没有找到目标卡片');
-                return;
-            }
-            
-            const targetImageIndex = targetCard.dataset.imageIndex;
-            console.log('目标位置:', targetImageIndex);
-            
-            // 执行图片重排序
-            reorderImage(sourceProductId, parseInt(sourceImageIndex), targetProductId, parseInt(targetImageIndex));
-        } catch (error) {
-            console.error('处理拖拽失败:', error);
-        }
-    }
-
-    function reorderImage(sourceProductId, sourceImageIndex, targetProductId, targetImageIndex) {
-        console.log('开始重排序图片:', { sourceProductId, sourceImageIndex, targetProductId, targetImageIndex });
-        
-        const productGroups = window.productGroups;
-        if (!productGroups) {
-            console.error('没有找到商品组数据');
-            return;
-        }
-        
-        // 找到源商品组和目标商品组
-        const sourceGroup = productGroups.find(group => group.productId == sourceProductId);
-        const targetGroup = productGroups.find(group => group.productId == targetProductId);
-        
-        if (!sourceGroup || !targetGroup) {
-            console.error('没有找到源组或目标组:', { sourceGroup: !!sourceGroup, targetGroup: !!targetGroup });
-            return;
-        }
-        
-        // 获取要移动的图片
-        const imageToMove = sourceGroup.images[sourceImageIndex];
-        if (!imageToMove) {
-            console.error('没有找到要移动的图片');
-            return;
-        }
-        
-        console.log('移动图片:', imageToMove);
-        
-        // 从源组中移除图片
-        sourceGroup.images.splice(sourceImageIndex, 1);
-        
-        // 添加到目标组
-        if (sourceProductId == targetProductId) {
-            // 同一组内移动
-            sourceGroup.images.splice(targetImageIndex, 0, imageToMove);
-        } else {
-            // 跨组移动
-            targetGroup.images.splice(targetImageIndex, 0, imageToMove);
-            imageToMove.productId = targetProductId;
-        }
-        
-        // 更新图片索引
-        updateImageIndices();
-        
-        // 更新全局数据
-        window.productGroups = productGroups;
-        window.allImages = productGroups.flatMap(group => group.images);
-        
-        console.log('重排序完成，重新渲染...');
-        
-        // 重新渲染图片展示
-        const parsedResult = { success: true, data: productGroups };
-        displayImageGallery(parsedResult);
-        
-        showNotification('图片顺序已更新', 'success');
-    }
-
-    function updateImageIndices() {
-        const productGroups = window.productGroups;
-        productGroups.forEach(group => {
-            group.images.forEach((image, index) => {
-                image.index = index + 1;
+        // 清除商品选择
+        const clearProductSelection = (productId) => {
+            const keysToRemove = Array.from(selectedImages.value).filter(imageKey => {
+                const [pid] = imageKey.split('-');
+                return pid == productId;
             });
-        });
-    }
-
-    // 点击模态框外部关闭
-    document.addEventListener('click', function(e) {
-        const modal = document.getElementById('imageModal');
-        if (e.target === modal) {
-            closeImageModal();
-        }
-    });
-
-    // ESC键关闭模态框
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') {
-            closeImageModal();
-        }
-    });
-    
-    // 初始化
-    window.addEventListener('DOMContentLoaded', async () => {
-        console.log('淘宝好评图爬取插件已加载');
+            
+            keysToRemove.forEach(key => {
+                selectedImages.value.delete(key);
+            });
+            selectedImageCount.value = selectedImages.value.size;
+            
+            showNotification('已清除该商品的选择', 'info');
+        };
         
-        // 验证全局函数是否正确挂载
-        console.log('验证全局函数挂载:');
-        console.log('- downloadProductImages:', typeof window.downloadProductImages);
-        console.log('- openImageModal:', typeof window.openImageModal);
-        console.log('- closeImageModal:', typeof window.closeImageModal);
-        console.log('- toggleImageSelection:', typeof window.toggleImageSelection);
-        console.log('- showNotification:', typeof window.showNotification);
-        console.log('- handleImageError:', typeof window.handleImageError);
-        console.log('- downloadImages:', typeof window.downloadImages);
-        
-        // 初始化进度条 - 每次打开插件时都显示未开始状态
-        initializeProgress();
-        
-        // 检查登录状态
-        await checkLoginStatus();
-    });
-    
-    // 检查登录状态
-    async function checkLoginStatus() {
-        try {
-            const response = await window.electronAPI.eventBus.trigger('taobao-login-check', {}, pluginName);
-            console.log('登录状态检查结果:', response);
-            // 正确解析嵌套的响应结构
-            const isLoggedIn = response.success && response.result && response.result.success;
-            updateLoginStatus(isLoggedIn);
-        } catch (error) {
-            console.error('检查登录状态失败:', error);
-            updateLoginStatus(false);
-        }
-    }
-    
-    // 更新登录状态UI
-    function updateLoginStatus(loggedIn) {
-        isLoggedIn = loggedIn;
-        if (loggedIn) {
-            loginBadge.textContent = '已登录';
-            loginBadge.classList.add('success');
-            statusDot.style.background = '#10b981';
-            statusText.textContent = '已登录淘宝';
-            // 更新步骤指示器
-            stepIcons[0].classList.remove('active');
-            stepIcons[0].classList.add('completed');
-            stepIcons[0].textContent = '✓';
-            stepIcons[1].classList.add('active');
-            loginFrame.innerHTML = '<div style="color: #10b981;">✓ 登录成功</div>';
-        } else {
-            loginBadge.textContent = '未登录';
-            loginBadge.classList.remove('success');
-            statusDot.style.background = '#ef4444';
-            statusText.textContent = '未登录';
-            stepIcons[0].classList.add('active');
-        }
-    }
-    
-    // 重置登录UI
-    function resetLoginUI() {
-        if (loginBtn) {
-        loginBtn.disabled = false;
-        loginBtn.textContent = '开始登录';
-        }
-        if (loginFrame) {
-        loginFrame.innerHTML = `
-            <div style="text-align: center;">
-                <div style="margin-bottom: 16px; color: #737373;">点击下方按钮开始登录淘宝</div>
-                <button class="button" id="loginBtn">开始登录</button>
-            </div>
-        `;
-        // 重新绑定按钮事件
-        const newLoginBtn = document.querySelector('#loginBtn');
-        if (newLoginBtn) {
-                newLoginBtn.onclick = loginBtn.onclick;
+        // 下载所有图片
+        const downloadAllImages = () => {
+            if (selectedImageCount.value > 0) {
+                const selectedImageData = getSelectedImageData();
+                downloadImages(selectedImageData);
+            } else if (totalImages.value > 0) {
+                const allImages = getAllImages();
+                downloadImages(allImages);
             }
-        }
-    }
-    
-    // 处理图片选择
-    function handleImageSelected(imagePath) {
-        selectedImage = imagePath;
-        if (uploadArea) {
-        uploadArea.innerHTML = `
-            <div class="upload-icon">✓</div>
-            <div>已选择图片</div>
-            <div style="color: #737373; font-size: 12px; margin-top: 8px;">
-                ${imagePath.split('/').pop() || imagePath.split('\\').pop()}
-            </div>
-        `;
-        }
-        if (searchBtn) {
-            searchBtn.disabled = false;
-        }
-    }
-    
-    
-    
-
-
-    // 显示图片画廊
-    function displayImageGallery(parsedResult) {
-        try {
-            console.log('开始显示图片画廊:', parsedResult);
-            const imageGallery = document.getElementById('imageGallery');
-            const emptyState = document.getElementById('emptyState');
-            const imageStats = document.getElementById('imageStats');
-            const totalImagesSpan = document.getElementById('totalImages');
-            const downloadAllBtn = document.getElementById('downloadAllBtn');
+        };
+        
+        // 获取选中图片数据
+        const getSelectedImageData = () => {
+            const selectedArray = Array.from(selectedImages.value);
+            const selectedImageData = [];
             
-            // 检查是否已经有处理好的商品组数据
-            let productGroups = [];
-            let totalImages = 0;
+            // 先按商品ID和图片索引排序，确保顺序一致
+            const sortedArray = selectedArray.sort((a, b) => {
+                const [pidA, imgIdxA] = a.split('-');
+                const [pidB, imgIdxB] = b.split('-');
+                if (pidA !== pidB) {
+                    return parseInt(pidA) - parseInt(pidB);
+                }
+                return parseInt(imgIdxA) - parseInt(imgIdxB);
+            });
             
-            if (parsedResult.data && parsedResult.data.length > 0 && parsedResult.data[0].images) {
-                // 如果数据已经是处理好的商品组格式
-                productGroups = parsedResult.data;
-                totalImages = productGroups.reduce((sum, group) => sum + group.images.length, 0);
-            } else {
-                // 按商品分组收集图片（原始数据格式）
-                parsedResult.data.forEach((product, productIndex) => {
-                    const imgUrls = product.img_urls || [];
-                    const productImages = imgUrls.map((imgUrl, imgIndex) => ({
-                        url: imgUrl,
-                        productTitle: product.title || `商品${productIndex + 1}`,
-                        productLink: product.link,
-                        index: imgIndex + 1,
-                        productId: productIndex
-                    }));
-                    
-                    if (productImages.length > 0) {
-                        productGroups.push({
-                            productId: productIndex,
-                            productTitle: product.title || `商品${productIndex + 1}`,
-                            productLink: product.link,
-                            images: productImages
-                        });
-                        totalImages += productImages.length;
-                    }
-                });
-            }
-            
-            if (productGroups.length > 0) {
-                // 隐藏空状态，显示图片画廊
-                emptyState.style.display = 'none';
-                imageGallery.style.display = 'block';
-                imageStats.style.display = 'inline';
-                downloadAllBtn.style.display = 'inline-block';
-                
-                // 更新统计信息
-                totalImagesSpan.textContent = totalImages;
-                
-                // 生成按商品分组的图片展示
-                let html = '';
-                productGroups.forEach((productGroup, groupIndex) => {
-                    html += `
-                        <div class="product-group" data-product-id="${productGroup.productId}">
-                            <div class="product-group-header">
-                                <div class="product-group-title">
-                                    <span class="product-number">商品${productGroup.productId + 1}:</span>
-                                    <span class="product-name">${productGroup.productTitle}</span>
-                                </div>
-                                <div class="product-group-meta">
-                                    <span class="image-count">${productGroup.images.length}张图片</span>
-                                    <div class="product-download-buttons">
-                                        <button class="product-action-btn" id="downloadProductBtn_${productGroup.productId}" onclick="downloadProductImages('${productGroup.productLink}', '${productGroup.productTitle}')">
-                                            下载此商品图片
-                                        </button>
-                                        <button class="product-action-btn secondary" id="clearProductSelectionBtn_${productGroup.productId}" style="display: none;" onclick="clearProductSelection('${productGroup.productId}')">
-                                            取消选中
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="product-images-grid" data-product-id="${productGroup.productId}">
-                    `;
-                    
-                    productGroup.images.forEach((image, imageIndex) => {
-                        // 转义特殊字符，避免JavaScript字符串解析错误
-                        const escapedUrl = image.url.replace(/'/g, "\\'").replace(/"/g, '\\"');
-                        const escapedTitle = image.productTitle.replace(/'/g, "\\'").replace(/"/g, '\\"');
-                        
-                        html += `
-                            <div class="image-card" 
-                                 data-product-id="${productGroup.productId}" 
-                                 data-image-index="${imageIndex}"
-                                 data-image-url="${escapedUrl}"
-                                 data-image-title="${escapedTitle}"
-                                 draggable="true"
-                                 onclick="toggleImageSelection(this)"
-                                 style="cursor: pointer;">
-                                <div class="image-container loading">
-                                    <img src="${image.url}" 
-                                         alt="${image.productTitle} - 图片${image.index}" 
-                                         onload="this.parentElement.classList.remove('loading')" 
-                                         onerror="handleImageError(this)">
-                                    <div class="image-loading">
-                                        <div class="loading-spinner"></div>
-                                    </div>
-                                    <div class="image-overlay">
-                                        <div class="image-actions">
-                                            <button class="image-action-btn" onclick="event.stopPropagation(); openImageModalFromData(this.closest('.image-card'))">
-                                                查看
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="image-info">
-                                    <div class="image-title">图片${image.index}</div>
-                                    <div class="image-meta">
-                                        <span class="image-size">预览</span>
-                                    </div>
-                                </div>
-                            </div>
-                        `;
+            let globalIndex = 0;
+            sortedArray.forEach(imageKey => {
+                const [productId, imageIndex] = imageKey.split('-');
+                const productGroup = productGroups.value.find(group => group.productId == productId);
+                if (productGroup && productGroup.images[imageIndex]) {
+                    selectedImageData.push({
+                        url: productGroup.images[imageIndex].url,
+                        index: globalIndex++
                     });
-                    
-                    html += `
-                            </div>
-                        </div>
-                    `;
-                });
-                
-                imageGallery.innerHTML = html;
-                
-                // 保存数据供后续使用
-                window.productGroups = productGroups;
-                // 处理所有图片数据，移除productTitle字段
-                window.allImages = productGroups.flatMap(group => 
+                }
+            });
+            
+            return selectedImageData;
+        };
+        
+        // 获取所有图片
+        const getAllImages = () => {
+            let globalIndex = 0;
+            return productGroups.value.flatMap(group => 
                     group.images.map(image => ({
                         url: image.url,
-                        index: image.index
+                        index: globalIndex++
                     }))
                 );
-                window.selectedImages = new Set();
-                selectedImageCount = 0; // 重置选择计数器
-                
-                console.log('图片画廊渲染完成，商品组数量:', productGroups.length);
-                
-                // 初始化拖拽排序
-                initializeDragAndDrop();
-                
-                // 绑定下载按钮事件
-                bindDownloadButtons();
-                
-                // 初始化下载按钮显示
-                updateDownloadButtons();
-                updateProductDownloadButtons();
-                
-            } else {
-                // 显示空状态
-                emptyState.style.display = 'block';
-                imageGallery.style.display = 'none';
-                imageStats.style.display = 'none';
-                downloadAllBtn.style.display = 'none';
-            }
-            
-        } catch (error) {
-            console.error('显示图片画廊失败:', error);
-            showNotification('显示图片画廊失败: ' + error.message, 'error');
-        }
-    }
-    
-
-
-
-
-    function updateCrawlProgress(current, total, status = 'processing') {
-        const progressValue = document.getElementById('crawlProgressValue');
-        const progressFill = document.getElementById('crawlProgressFill');
-        
-        if (progressValue && progressFill) {
-            // 根据状态设置文字
-            let statusText = '未开始';
-            if (status === 'not_started') {
-                statusText = '未开始';
-            } else if (status === 'processing') {
-                statusText = '进行中';
-            } else if (status === 'completed') {
-                statusText = `爬取完成：${current}/${total}`;
-            } else if (status === 'error') {
-                statusText = '失败';
-            }
-            
-            console.log(`更新爬取进度: ${statusText} (${current}/${total})`);
-            progressValue.textContent = statusText;
-            
-            const percentage = total > 0 ? (current / total * 100) : 0;
-            progressFill.style.width = `${percentage}%`;
-            
-            // 移除所有状态类
-            progressFill.classList.remove('processing', 'completed', 'error');
-            
-            // 添加状态类
-            if (status === 'processing') {
-                progressFill.classList.add('processing');
-            } else if (status === 'completed') {
-                progressFill.classList.add('completed');
-            } else if (status === 'error') {
-                progressFill.classList.add('error');
-            }
-        }
-    }
-
-    function updateDownloadProgress(current, total, status = 'processing') {
-        const progressValue = document.getElementById('downloadProgressValue');
-        const progressFill = document.getElementById('downloadProgressFill');
-        
-        if (progressValue && progressFill) {
-            // 根据状态设置文字
-            let statusText = '未开始';
-            if (status === 'not_started') {
-                statusText = '未开始';
-            } else if (status === 'processing') {
-                statusText = '进行中';
-            } else if (status === 'completed') {
-                statusText = '已完成';
-            } else if (status === 'error') {
-                statusText = '失败';
-            }
-            
-            console.log(`更新下载进度: ${statusText} (${current}/${total})`);
-            progressValue.textContent = statusText;
-            
-            const percentage = total > 0 ? (current / total * 100) : 0;
-            progressFill.style.width = `${percentage}%`;
-            
-            // 移除所有状态类
-            progressFill.classList.remove('processing', 'completed', 'error');
-            
-            // 添加状态类
-            if (status === 'processing') {
-                progressFill.classList.add('processing');
-            } else if (status === 'completed') {
-                progressFill.classList.add('completed');
-            } else if (status === 'error') {
-                progressFill.classList.add('error');
-            }
-        }
-    }
-
-    // 初始化进度条
-    function initializeProgress() {
-        console.log('初始化进度条');
-        
-        // 重置爬取进度为未开始状态
-        updateCrawlProgress(0, 0, 'not_started');
-        
-        // 重置下载进度为未开始状态
-        updateDownloadProgress(0, 0, 'not_started');
-        
-        console.log('进度条初始化完成');
-    }
-    
-    // 显示通知
-    window.showNotification = function(message, type = 'info') {
-        console.log(`[${type}] ${message}`);
-        
-        // 创建通知元素
-        const notification = document.createElement('div');
-        notification.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 12px 16px;
-            border-radius: 8px;
-            color: white;
-            font-size: 14px;
-            font-weight: 500;
-            z-index: 1000;
-            transform: translateX(100%);
-            transition: transform 0.3s ease;
-            max-width: 300px;
-            word-wrap: break-word;
-        `;
-        
-        // 根据类型设置样式
-        const colors = {
-            success: '#52c41a',
-            error: '#ff4d4f',
-            warning: '#faad14',
-            info: '#1890ff'
         };
-        notification.style.background = colors[type];
-        notification.textContent = message;
-        document.body.appendChild(notification);
         
-        // 显示动画
-        setTimeout(() => {
-            notification.style.transform = 'translateX(0)';
-        }, 100);
+        // 拖拽处理函数
+        const handleDragLeave = () => {
+            // 拖拽离开处理
+        };
         
-        // 自动隐藏
-        setTimeout(() => {
-            notification.style.transform = 'translateX(100%)';
-            setTimeout(() => {
-                if (notification.parentNode) {
-                    notification.parentNode.removeChild(notification);
+        const handleDrop = (e) => {
+            e.preventDefault();
+            const files = e.dataTransfer?.files;
+            if (files && files.length > 0) {
+                const file = files[0];
+                if (file.type.startsWith('image/')) {
+                    selectedImage.value = file.path || file.name;
+            } else {
+                    showNotification('请选择图片文件', 'warning');
                 }
-            }, 300);
-        }, 3000);
+            }
+        };
+        
+        return {
+            // 状态
+            isLoggedIn,
+            isLoggingIn,
+            is1688LoggedIn,
+            is1688LoggingIn,
+            currentPlatform,
+            selectedImage,
+            skuId, // 新增：暴露 skuId
+            selectedImages,
+            selectedImageCount,
+            productGroups,
+            totalImages,
+            showImageModal,
+            modalImageUrl,
+            modalTitle,
+            crawlProgress,
+            downloadProgress,
+            
+            // 计算属性
+            step1Class,
+            step1Text,
+            step2Class,
+            step2Text,
+            step3Class,
+            step3Text,
+            crawlProgressText,
+            crawlProgressWidth,
+            crawlProgressClass,
+            downloadProgressText,
+            downloadProgressWidth,
+            downloadProgressClass,
+            downloadAllText,
+            
+            // 方法
+            startLogin,
+            start1688Login,
+            switchPlatform,
+            selectImage,
+            startSearch,
+            toggleImageSelection,
+            isImageSelected,
+            toggleSelectAll,
+            downloadProductImages,
+            openImageModal,
+            closeImageModal,
+            handleImageError,
+            getFileName,
+            getImageSelectionOrder,
+            getProductSelectedCount,
+            getProductDownloadText,
+            clearAllSelection,
+            clearProductSelection,
+            downloadAllImages,
+            handleDragLeave,
+            handleDrop
+        };
     }
+});
 
-
-})();
-
-/******/ })()
-;
+// 挂载应用
+app.mount('#app');

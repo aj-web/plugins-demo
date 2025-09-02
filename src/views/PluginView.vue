@@ -4,7 +4,7 @@
       <div class="loading-spinner"></div>
       <p>正在加载插件...</p>
     </div>
-    
+
     <div v-else-if="error" class="error-container">
       <el-icon class="error-icon">
         <Warning />
@@ -13,7 +13,7 @@
       <p>{{ error }}</p>
       <el-button @click="reloadPlugin" type="primary">重试</el-button>
     </div>
-    
+
     <div class="plugin-container" v-show="!loading && !error">
       <div id="plugin-container" ref="pluginContainer"></div>
     </div>
@@ -21,7 +21,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElIcon, ElButton } from 'element-plus'
 import { Warning } from '@element-plus/icons-vue'
@@ -31,226 +31,103 @@ const pluginContainer = ref<HTMLElement>()
 const loading = ref(true)
 const error = ref('')
 const currentPlugin = ref('')
+let currentIframe: HTMLIFrameElement | null = null
+let messageListener: ((event: MessageEvent) => void) | null = null
 
-// 样式隔离工具类
-class StyleIsolator {
-  private pluginName: string
-  private styleElement: HTMLStyleElement | null = null
-  private isolatedStyles = new Set()
+// 允许的通用IPC通道白名单
+let IPC_ALLOWLIST = new Set<string>()
 
-  constructor(pluginName: string) {
-    this.pluginName = pluginName
-  }
+const setupMessageBridge = (pluginName: string, iframe: HTMLIFrameElement) => {
+  teardownMessageBridge()
+  messageListener = async (event: MessageEvent) => {
+    const data = event.data || {}
+    if (!data || data.source !== 'plugin-frontend' || !data.action) return
 
-  cleanup() {
-    if (this.styleElement) {
-      this.styleElement.remove()
-      this.styleElement = null
-    }
-    this.isolatedStyles.clear()
-  }
-
-  createStyleElement() {
-    this.styleElement = document.createElement('style')
-    this.styleElement.setAttribute('data-plugin', this.pluginName)
-    this.styleElement.setAttribute('data-isolated', 'true')
-    document.head.appendChild(this.styleElement)
-    return this.styleElement
-  }
-
-  isolateStyles(cssText: string): string {
-    if (!cssText || typeof cssText !== 'string') return ''
-    
     try {
-      const tempStyle = document.createElement('style')
-      tempStyle.textContent = cssText
-      document.head.appendChild(tempStyle)
-      
-      const rules = Array.from(tempStyle.sheet?.cssRules || [])
-      document.head.removeChild(tempStyle)
-      
-      const isolatedRules = rules.map(rule => {
-        if (rule instanceof CSSStyleRule) {
-          return this.isolateSelector(rule.selectorText, rule.cssText)
-        } else if (rule instanceof CSSMediaRule) {
-          return this.isolateMediaRule(rule)
-        } else {
-          return rule.cssText
+      if (data.action === 'trigger-event') {
+        const { eventType, params } = data.payload || {}
+        const result = await (window as any).electronAPI.triggerEvent(pluginName, eventType, params)
+        iframe.contentWindow?.postMessage({ source: 'host', id: data.id, success: true, result }, '*')
+      } else if (data.action === 'ipc-invoke') {
+        const { channel, args = [] } = data.payload || {}
+        if (!IPC_ALLOWLIST.has(channel)) {
+          iframe.contentWindow?.postMessage({ source: 'host', id: data.id, success: false, error: 'Channel not allowed' }, '*')
+          return
         }
-      })
-      
-      return isolatedRules.join('\n')
-    } catch (err) {
-      console.warn(`[StyleIsolator] Failed to isolate styles for plugin ${this.pluginName}:`, err)
-      return cssText
+        //进行参数展开invoke调用
+        const result = await (window as any).electronAPI.invoke(channel, args)
+        iframe.contentWindow?.postMessage({ source: 'host', id: data.id, success: true, result }, '*')
+      }
+    } catch (e: any) {
+      iframe.contentWindow?.postMessage({ source: 'host', id: data.id, success: false, error: e?.message || String(e) }, '*')
     }
   }
+  window.addEventListener('message', messageListener)
+}
 
-  private isolateSelector(selector: string, cssText: string): string {
-    const isolatedSelector = selector.split(',').map(sel => {
-      const trimmed = sel.trim()
-      if (trimmed.startsWith('#')) {
-        return `#plugin-container ${trimmed}`
-      }
-      return `#plugin-container ${trimmed}`
-    }).join(', ')
-    
-    return cssText.replace(selector, isolatedSelector)
-  }
-
-  private isolateMediaRule(mediaRule: CSSMediaRule): string {
-    const mediaText = mediaRule.conditionText
-    const rules = Array.from(mediaRule.cssRules).map(rule => {
-      if (rule instanceof CSSStyleRule) {
-        return this.isolateSelector(rule.selectorText, rule.cssText)
-      }
-      return rule.cssText
-    })
-    
-    return `@media ${mediaText} {\n${rules.join('\n')}\n}`
-  }
-
-  async loadIsolatedCSS(cssPath: string): Promise<void> {
-    try {
-      const response = await fetch(cssPath, {
-        // 添加超时和错误处理选项
-        signal: AbortSignal.timeout(2000)
-      })
-      if (!response.ok) {
-        console.log(`[StyleIsolator] CSS file not found: ${cssPath}`)
-        return
-      }
-      const cssText = await response.text()
-      const isolatedCSS = this.isolateStyles(cssText)
-      
-      if (this.styleElement) {
-        this.styleElement.textContent = isolatedCSS
-      }
-    } catch (err) {
-      // 静默处理文件不存在的情况，不显示错误
-      console.log(`[StyleIsolator] CSS file not accessible: ${cssPath}`)
-    }
-  }
-
-  processInlineStyles(container: HTMLElement) {
-    const styleElements = container.querySelectorAll('style')
-    styleElements.forEach(style => {
-      const cssText = style.textContent || ''
-      const isolatedCSS = this.isolateStyles(cssText)
-      style.textContent = isolatedCSS
-    })
-  }
-
-  processStyleTags(container: HTMLElement) {
-    const linkElements = container.querySelectorAll('link[rel="stylesheet"]')
-    linkElements.forEach(link => {
-      const href = link.getAttribute('href')
-      if (href) {
-        this.loadIsolatedCSS(href)
-      }
-    })
+const teardownMessageBridge = () => {
+  if (messageListener) {
+    window.removeEventListener('message', messageListener)
+    messageListener = null
   }
 }
 
 const loadPlugin = async (pluginName: string) => {
   console.log('[PluginView] loadPlugin called with pluginName:', pluginName)
-  
-  // 等待 DOM 渲染完成
-  await nextTick()
-  
-  if (!pluginContainer.value) {
-    console.error('[PluginView] loadPlugin pluginContainer is null, waiting for DOM...')
-    // 如果还是 null，再等待一下
-    await new Promise(resolve => setTimeout(resolve, 100))
-    
-    if (!pluginContainer.value) {
-      console.error('[PluginView] loadPlugin pluginContainer is still null after waiting')
-      return
-    }
-  }
-  
   loading.value = true
   error.value = ''
-  
+
   try {
-    console.log('[PluginView] loadPlugin cleaning previous plugin content')
-    // 清理之前的插件内容
-    pluginContainer.value.innerHTML = ''
-    
-    console.log('[PluginView] loadPlugin getting plugin resource path')
-    // 获取插件资源路径
-    const resourcePath = await window.electronAPI?.getPluginResourcePath(pluginName)
-    console.log('[PluginView] loadPlugin resourcePath:', resourcePath)
-    
-    if (!resourcePath) {
-      throw new Error('无法获取插件资源路径')
+    if (pluginContainer.value) {
+      pluginContainer.value.innerHTML = ''
     }
-    
-    const htmlPath = `${resourcePath}/frontend/index.html`
-    const jsPath = `${resourcePath}/frontend/main.js`
-    const cssPath = `${resourcePath}/frontend/style.css`
-    
-    console.log('[PluginView] loadPlugin file paths:', { htmlPath, jsPath, cssPath })
-    
-    // 创建样式隔离器
-    const styleIsolator = new StyleIsolator(pluginName)
-    
-    console.log('[PluginView] loadPlugin loading HTML from:', htmlPath)
-    // 加载插件HTML
-    const response = await fetch(htmlPath)
-    if (!response.ok) {
-      throw new Error(`无法加载插件HTML: ${response.statusText}`)
-    }
-    
-    const htmlText = await response.text()
-    console.log('[PluginView] loadPlugin HTML loaded, length:', htmlText.length)
-    
-    // 创建临时容器来解析HTML
-    const tempContainer = document.createElement('div')
-    tempContainer.innerHTML = htmlText
-    
-    console.log('[PluginView] loadPlugin processing styles')
-    // 处理样式隔离
-    styleIsolator.processInlineStyles(tempContainer)
-    styleIsolator.processStyleTags(tempContainer)
-    
-    console.log('[PluginView] loadPlugin loading CSS from:', cssPath)
-    // 检查CSS文件是否存在，如果存在才加载
+    currentIframe = null
+
+    // 拉取允许通道的最新配置
     try {
-      // 通过 Electron API 检查文件是否存在
-      const cssExists = await window.electronAPI?.checkFileExists(cssPath)
-      if (cssExists) {
-        await styleIsolator.loadIsolatedCSS(cssPath)
-      } else {
-        console.log('[PluginView] loadPlugin CSS file not found, skipping:', cssPath)
-      }
-    } catch (err) {
-      // 静默处理文件不存在的情况，不显示错误
-      console.log('[PluginView] loadPlugin CSS file not accessible, skipping:', cssPath)
+      const list: string[] = await (window as any).electronAPI.invoke('get-ipc-allowlist')
+      IPC_ALLOWLIST = new Set(list || [])
+    } catch { }
+
+    const res = await (window as any).electronAPI.startPluginProcess(pluginName)
+    if (!res?.success) {
+      throw new Error(res?.error || '无法读取插件 manifest')
     }
-    
-    console.log('[PluginView] loadPlugin inserting HTML into container')
-    // 将处理后的HTML插入到插件容器
-    pluginContainer.value.innerHTML = tempContainer.innerHTML
-    
-    console.log('[PluginView] loadPlugin loading JavaScript from:', jsPath)
-    // 加载JavaScript
-    const script = document.createElement('script')
-    script.src = jsPath
-    script.onload = () => {
-      console.log(`[PluginView] loadPlugin plugin ${pluginName} loaded successfully`)
+    const manifest = res.manifest || {}
+    const frontend = manifest.frontend || {}
+
+    let src = ''
+    if (process.env.NODE_ENV === 'development' && frontend.devServerUrl) {
+      src = frontend.devServerUrl
+    } else if (frontend.entry) {
+      // 通过内置静态服务器使用 http 访问
+      src = await (window as any).electronAPI.getPluginHttpUrl(pluginName, frontend.entry)
+    } else {
+      throw new Error('未配置插件前端入口(frontend)')
+    }
+
+    const iframe = document.createElement('iframe')
+    iframe.src = src
+    iframe.style.width = '100%'
+    iframe.style.height = '100%'
+    iframe.style.border = '0'
+    iframe.setAttribute('sandbox', 'allow-scripts allow-forms')
+
+    iframe.onload = () => {
+      console.log('[PluginView] iframe loaded:', src)
+      loading.value = false
+      setupMessageBridge(pluginName, iframe)
+    }
+    iframe.onerror = (e) => {
+      console.error('[PluginView] iframe load error:', e)
+      error.value = '插件页面加载失败'
       loading.value = false
     }
-    script.onerror = (error) => {
-      console.error('[PluginView] loadPlugin JavaScript load error:', error)
-      throw new Error('插件JavaScript加载失败')
-    }
-    
-    pluginContainer.value.appendChild(script)
-    console.log('[PluginView] loadPlugin script element appended to container')
-    
+
+    pluginContainer.value?.appendChild(iframe)
+    currentIframe = iframe
   } catch (err) {
-    console.error(`[PluginView] loadPlugin plugin ${pluginName} load failed:`, err)
+    console.error('[PluginView] loadPlugin failed:', err)
     error.value = err instanceof Error ? err.message : '未知错误'
     loading.value = false
   }
@@ -265,24 +142,13 @@ const reloadPlugin = () => {
 watch(() => route.params.name, (newPluginName) => {
   console.log('[PluginView] watch route.params.name changed to:', newPluginName)
   if (newPluginName && newPluginName !== currentPlugin.value) {
-    console.log('[PluginView] watch loading new plugin:', newPluginName)
     currentPlugin.value = newPluginName as string
     loadPlugin(currentPlugin.value)
   }
 }, { immediate: true })
 
-onMounted(() => {
-  console.log('[PluginView] onMounted called')
-  console.log('[PluginView] onMounted route.params.name:', route.params.name)
-  if (route.params.name) {
-    console.log('[PluginView] onMounted loading plugin:', route.params.name)
-    currentPlugin.value = route.params.name as string
-    loadPlugin(currentPlugin.value)
-  }
-})
-
 onUnmounted(() => {
-  // 清理插件资源
+  teardownMessageBridge()
   if (pluginContainer.value) {
     pluginContainer.value.innerHTML = ''
   }
@@ -319,8 +185,13 @@ onUnmounted(() => {
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .error-container {
@@ -365,4 +236,4 @@ onUnmounted(() => {
 #plugin-container * {
   box-sizing: border-box;
 }
-</style> 
+</style>

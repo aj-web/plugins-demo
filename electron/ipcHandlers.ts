@@ -7,9 +7,25 @@ import https from 'https'
 import http from 'http'
 import { pipeline } from 'stream/promises'
 import archiver from 'archiver'
+import { staticServer } from './static-server'
+import { configManager } from './config'
+
+const dynamicAllowlist = new Set<string>()
 
 export function setupIpcHandlers(): void {
   console.log('[ipcHandlers] Setting up IPC handlers')
+
+  // 初始化 allowlist
+  configManager.getIpcAllowlist().forEach(c => dynamicAllowlist.add(c))
+  configManager.watchIpcAllowlist((list) => {
+    dynamicAllowlist.clear()
+    list.forEach(c => dynamicAllowlist.add(c))
+    console.log('[ipcHandlers] allowlist updated:', Array.from(dynamicAllowlist))
+  })
+  
+  ipcMain.handle('get-ipc-allowlist', async () => {
+    return Array.from(dynamicAllowlist)
+  })
   
   ipcMain.handle('select-file', async () => {
     console.log('[ipcHandlers] select-file called')
@@ -69,6 +85,14 @@ export function setupIpcHandlers(): void {
     return resourcePath
   })
 
+  ipcMain.handle('get-plugin-http-url', async (event, pluginName: string, subPath: string = 'dist/index.html') => {
+    console.log('[ipcHandlers] get-plugin-http-url called with:', { pluginName, subPath })
+    const base = staticServer.getBaseUrl()
+    const url = `${base}/${pluginName}/${subPath}`
+    console.log('[ipcHandlers] get-plugin-http-url result:', url)
+    return url
+  })
+
   ipcMain.handle('check-file-exists', async (event, filePath: string) => {
     console.log('[ipcHandlers] check-file-exists called with filePath:', filePath)
     try {
@@ -84,8 +108,9 @@ export function setupIpcHandlers(): void {
   })
 
   // ZIP打包下载API
-  ipcMain.handle('download-images-as-zip', async (event, images: Array<{url: string, productTitle: string, index: number}>) => {
+  ipcMain.handle('download-images-as-zip', async (event, images: Array<{url: string, index: number}>) => {
     console.log('[ipcHandlers] download-images-as-zip called with images count:', images.length)
+    console.log('[ipcHandlers] download-images-as-zip images data:', images)
     
     try {
       // 选择保存位置

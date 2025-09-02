@@ -1,41 +1,47 @@
 {
-  "id": "taobao-scraper-plugin",
-  "name": "淘宝好评图爬取插件",
+  "name": "taobao-scraper-plugin",
   "version": "1.0.0",
   "description": "专业的淘宝商品好评图片爬取插件，支持图片搜索、商品详情页爬取和批量下载",
-  "author": "Taobao Scraper Team",
   "events": [
     {
       "id": "taobao-login",
-      "name": "淘宝登录",
-      "description": "启动浏览器进行淘宝扫码登录",
-      "jsFile": "nodes/taobao-login.js",
       "class": "TaobaoLoginNode",
-      "method": "startLogin"
+      "method": "startLogin",
+      "jsFile": "nodes/taobao-login.js"
     },
     {
       "id": "taobao-login-check",
-      "name": "检查登录状态",
-      "description": "检查淘宝登录状态",
-      "jsFile": "nodes/taobao-login.js",
       "class": "TaobaoLoginNode",
-      "method": "checkLoginStatus"
+      "method": "checkLoginStatus",
+      "jsFile": "nodes/taobao-login.js"
     },
     {
       "id": "image-search",
-      "name": "图片搜索",
-      "description": "使用图片搜索淘宝商品",
-      "jsFile": "nodes/image-search.js",
       "class": "ImageSearchNode",
-      "method": "runSearch"
+      "method": "runSearch",
+      "jsFile": "nodes/image-search.js"
     },
     {
-      "id": "crawl-download",
-      "name": "爬取下载",
-      "description": "爬取商品详情页的好评图片并下载",
-      "jsFile": "nodes/crawl-download.js",
-      "class": "CrawlDownloadNode",
-      "method": "crawlGoodReviews"
+      "id": "1688-login",
+      "class": "Login1688Node",
+      "method": "startLogin",
+      "jsFile": "nodes/1688-login.js"
+    },
+    {
+      "id": "1688-login-check",
+      "class": "Login1688Node",
+      "method": "checkLoginStatus",
+      "jsFile": "nodes/1688-login.js"
+    },
+    {
+      "id": "1688-image-search",
+      "class": "Search1688Node",
+      "method": "startSearch",
+      "jsFile": "nodes/1688-search.js"
     }
-  ]
+  ],
+  "frontend": {
+    "devServerUrl": "http://127.0.0.1:5175",
+    "entry": "dist/index.html"
+  }
 }

@@ -98,8 +98,36 @@
             display: flex;
             align-items: center;
             gap: 8px;
-            font-size: 13px;
+        }
+
+        .platform-switcher {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .platform-btn {
+            padding: 12px 24px;
+            border: 2px solid #e5e5e5;
+            border-radius: 8px;
+            background: white;
             color: #737373;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .platform-btn:hover {
+            border-color: #0066ff;
+            color: #0066ff;
+        }
+
+        .platform-btn.active {
+            border-color: #0066ff;
+            background: #0066ff;
+            color: white;
         }
 
         .status-dot {
@@ -718,8 +746,6 @@
             margin-bottom: 8px;
         }
 
-
-
         /* 搜索结果卡片样式优化 */
         .search-results {
             display: flex;
@@ -920,8 +946,6 @@
                 height: 120px;
             }
             
-
-            
             .image-modal-content {
                 max-width: 95%;
                 max-height: 95%;
@@ -946,6 +970,43 @@
             }
         }
 
+        /* 通知样式 */
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+            font-weight: 500;
+            z-index: 1000;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+            max-width: 300px;
+            word-wrap: break-word;
+        }
+        
+        .notification.show {
+            transform: translateX(0);
+        }
+        
+        .notification.success {
+            background: #10b981;
+        }
+        
+        .notification.error {
+            background: #ef4444;
+        }
+        
+        .notification.warning {
+            background: #f59e0b;
+        }
+        
+        .notification.info {
+            background: #3b82f6;
+        }
+        
         /* 平滑滚动 */
         html {
             scroll-behavior: smooth;
@@ -1036,8 +1097,6 @@
             border-radius: 4px;
         }
 
-
-
         /* 拖拽样式 */
         .image-card.dragging {
             opacity: 0.5;
@@ -1111,141 +1170,259 @@
             100% { background-position: -200% 0; }
         }
     </style>
-    <script defer="defer" src="main.js"></script>
 </head>
 <body>
-    <div class="navbar">
-        <div class="navbar-title">淘宝好评图爬取</div>
-        <div class="navbar-status">
-            <span class="status-dot"></span>
-            <span>未登录</span>
-        </div>
-    </div>
-    
-    <div class="container">
-        <div class="sidebar">
-            <div class="sidebar-section">
-                <div class="sidebar-label">功能</div>
-                <div class="sidebar-item active">🏠 主页</div>
-                <div class="sidebar-item">📷 图片搜索</div>
-                <div class="sidebar-item">📊 任务进度</div>
-                <div class="sidebar-item">💾 下载管理</div>
-            </div>
-            <div class="sidebar-section">
-                <div class="sidebar-label">历史任务</div>
-                <div class="sidebar-item">任务_20241220_001</div>
-                <div class="sidebar-item">任务_20241219_003</div>
-                <div class="sidebar-item">任务_20241219_002</div>
+    <div id="app">
+        <div class="navbar">
+            <div class="navbar-title">淘宝好评图爬取</div>
+            <div class="navbar-status">
+                <span class="status-dot" :style="{ background: isLoggedIn ? '#10b981' : '#ef4444' }"></span>
+                <span>{{ isLoggedIn ? '已登录淘宝' : '未登录' }}</span>
             </div>
         </div>
         
-        <div class="main-content">
-            <div class="steps-container">
-                <div class="steps">
-                    <div class="step">
-                        <div class="step-icon active">1</div>
-                        <div class="step-title">登录淘宝</div>
-                        <div class="step-description">扫码登录您的淘宝账号</div>
-                    </div>
-                    <div class="step">
-                        <div class="step-icon pending">2</div>
-                        <div class="step-title">上传图片</div>
-                        <div class="step-description">选择要搜索的商品图片</div>
-                    </div>
-                    <div class="step">
-                        <div class="step-icon pending">3</div>
-                        <div class="step-title">爬取评价</div>
-                        <div class="step-description">自动爬取商品好评图片</div>
-                    </div>
+        <div class="container">
+            <div class="sidebar">
+                <div class="sidebar-section">
+                    <div class="sidebar-label">功能</div>
+                    <div class="sidebar-item active">🏠 主页</div>
+                    <div class="sidebar-item">📷 图片搜索</div>
+                    <div class="sidebar-item">📊 任务进度</div>
+                    <div class="sidebar-item">💾 下载管理</div>
+                </div>
+                <div class="sidebar-section">
+                    <div class="sidebar-label">历史任务</div>
+                    <div class="sidebar-item">任务_20241220_001</div>
+                    <div class="sidebar-item">任务_20241219_003</div>
+                    <div class="sidebar-item">任务_20241219_002</div>
                 </div>
             </div>
             
-            <div class="card">
-                <div class="card-header">
-                    <div class="card-title">淘宝登录状态</div>
-                    <div class="badge" id="loginBadge">未登录</div>
+            <div class="main-content">
+                <!-- 平台切换 -->
+                <div class="platform-switcher">
+                    <button class="platform-btn" :class="{ active: currentPlatform === 'taobao' }" @click="switchPlatform('taobao')">
+                        🛒 淘宝
+                    </button>
+                    <button class="platform-btn" :class="{ active: currentPlatform === '1688' }" @click="switchPlatform('1688')">
+                        🏭 1688
+                    </button>
                 </div>
-                <div class="login-frame" id="loginFrame">
-                    <div style="text-align: center;">
-                        <div style="margin-bottom: 16px; color: #737373;">点击下方按钮开始登录淘宝</div>
-                        <button class="button" id="loginBtn">开始登录</button>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="card">
-                <div class="card-header">
-                    <div class="card-title">上传搜索图片</div>
-                </div>
-                <div class="upload-area" id="uploadArea">
-                    <div class="upload-icon">📤</div>
-                    <div>点击或拖拽图片到此处</div>
-                    <div style="color: #a3a3a3; font-size: 12px; margin-top: 8px;">支持 JPG、PNG、WEBP 格式，最大 5MB</div>
-                </div>
-                <div style="margin-top: 16px; text-align: right;">
-                    <button class="button" id="searchBtn" disabled>开始搜索</button>
-                </div>
-            </div>
-            
 
-            
-            <!-- 任务进度卡片 -->
-            <div class="card" id="taskProgressCard">
-                <div class="card-header">
-                    <div class="card-title">任务进度</div>
-                </div>
-                <div class="progress-container">
-                    <div class="progress-section">
-                        <div class="progress-title">爬取进度</div>
-                        <div class="progress-value" id="crawlProgressValue">未开始</div>
-                        <div class="progress-bar">
-                            <div class="progress-fill" id="crawlProgressFill" style="width: 0%;"></div>
+                <div class="steps-container">
+                    <div class="steps">
+                        <div class="step">
+                            <div class="step-icon" :class="step1Class">{{ step1Text }}</div>
+                            <div class="step-title">登录{{ currentPlatform === 'taobao' ? '淘宝' : '1688' }}</div>
+                            <div class="step-description">扫码登录您的{{ currentPlatform === 'taobao' ? '淘宝' : '1688' }}账号</div>
                         </div>
-                    </div>
-                    <div class="progress-section">
-                        <div class="progress-title">下载进度</div>
-                        <div class="progress-value" id="downloadProgressValue">未开始</div>
-                        <div class="progress-bar">
-                            <div class="progress-fill" id="downloadProgressFill" style="width: 0%;"></div>
+                        <div class="step">
+                            <div class="step-icon" :class="step2Class">{{ step2Text }}</div>
+                            <div class="step-title">上传图片</div>
+                            <div class="step-description">选择要搜索的商品图片</div>
+                        </div>
+                        <div class="step">
+                            <div class="step-icon" :class="step3Class">{{ step3Text }}</div>
+                            <div class="step-title">爬取评价</div>
+                            <div class="step-description">自动爬取商品好评图片</div>
                         </div>
                     </div>
                 </div>
-            </div>
-
-
-
-            <div class="card">
-                <div class="card-header">
-                    <div class="card-title">好评图片</div>
-                    <div class="card-actions">
-                        <span class="image-stats" id="imageStats" style="display: none;">共 <span id="totalImages">0</span> 张图片</span>
-                        <div class="download-buttons" id="downloadButtons" style="display: none;">
-                            <button class="button" id="downloadAllBtn">全部下载</button>
-                            <button class="button secondary" id="clearAllSelectionBtn" style="display: none;">取消选中</button>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">{{ currentPlatform === 'taobao' ? '淘宝' : '1688' }}登录状态</div>
+                        <div class="badge" :class="{ success: currentPlatform === 'taobao' ? isLoggedIn : is1688LoggedIn }">
+                            {{ currentPlatform === 'taobao' ? (isLoggedIn ? '已登录' : '未登录') : (is1688LoggedIn ? '已登录' : '未登录') }}
+                        </div>
+                    </div>
+                    <div class="login-frame">
+                        <div v-if="currentPlatform === 'taobao'">
+                            <!-- 淘宝登录 -->
+                            <div v-if="!isLoggedIn && !isLoggingIn" style="text-align: center;">
+                                <div style="margin-bottom: 16px; color: #737373;">点击下方按钮开始登录淘宝</div>
+                                <button class="button" @click="startLogin">开始登录淘宝</button>
+                            </div>
+                            <div v-else-if="isLoggingIn" style="text-align: center; color: #737373;">
+                                <div style="margin-bottom: 16px;">正在启动浏览器...</div>
+                            </div>
+                            <div v-else style="text-align: center; color: #10b981;">
+                                ✓ 淘宝登录成功
+                            </div>
+                        </div>
+                        <div v-else>
+                            <!-- 1688登录 -->
+                            <div v-if="!is1688LoggedIn && !is1688LoggingIn" style="text-align: center;">
+                                <div style="margin-bottom: 16px; color: #737373;">点击下方按钮开始登录1688</div>
+                                <button class="button" @click="start1688Login">开始登录1688</button>
+                            </div>
+                            <div v-else-if="is1688LoggingIn" style="text-align: center; color: #737373;">
+                                <div style="margin-bottom: 16px;">正在启动浏览器...</div>
+                            </div>
+                            <div v-else style="text-align: center; color: #10b981;">
+                                ✓ 1688登录成功
+                            </div>
                         </div>
                     </div>
                 </div>
-                <div class="empty-state" id="emptyState">
-                    <div class="empty-icon">📷</div>
-                    <div class="empty-title">暂无图片</div>
-                    <div class="empty-description">请先完成登录和图片搜索</div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">上传搜索图片</div>
+                    </div>
+                    <div style="display: flex; gap: 16px;">
+                        <!-- 左侧：图片上传区域 -->
+                        <div style="flex: 1;">
+                            <div class="upload-area" @click="selectImage" @dragover.prevent @dragleave="handleDragLeave" @drop="handleDrop">
+                                <div class="upload-icon">{{ selectedImage ? '✓' : '📤' }}</div>
+                                <div>{{ selectedImage ? '已选择图片' : '点击或拖拽图片到此处' }}</div>
+                                <div v-if="selectedImage" style="color: #737373; font-size: 12px; margin-top: 8px;">
+                                    {{ getFileName(selectedImage) }}
+                                </div>
+                                <div v-else style="color: #a3a3a3; font-size: 12px; margin-top: 8px;">支持 JPG、PNG、WEBP 格式，最大 5MB</div>
+                            </div>
+                        </div>
+                        
+                        <!-- 右侧：SKU ID输入区域 -->
+                        <div style="flex: 1;">
+                            <div style="margin-bottom: 8px; font-size: 12px; color: #737373; font-weight: 500;">SKU ID（可选）</div>
+                            <input 
+                                type="text" 
+                                v-model="skuId" 
+                                placeholder="输入商品ID，如：866648458353"
+                                style="width: 100%; padding: 12px; border: 2px dashed #e5e5e5; border-radius: 6px; font-size: 14px; outline: none; transition: all 0.2s;"
+                                :style="{ borderColor: skuId ? '#0066ff' : '#e5e5e5' }"
+                                @focus="$event.target.style.borderColor = '#0066ff'"
+                                @blur="$event.target.style.borderColor = skuId ? '#0066ff' : '#e5e5e5'"
+                            >
+                            <div style="color: #a3a3a3; font-size: 12px; margin-top: 8px;">
+                                输入商品ID可直接爬取该商品的评价图片，无需上传图片
+                            </div>
+                        </div>
+                    </div>
+                    <div style="margin-top: 16px; text-align: right;">
+                        <button class="button" @click="startSearch" :disabled="(!selectedImage && !skuId) || (currentPlatform === 'taobao' ? !isLoggedIn : !is1688LoggedIn)">开始搜索</button>
+                    </div>
                 </div>
-                <div class="image-gallery" id="imageGallery" style="display: none;"></div>
+                
+                <!-- 任务进度卡片 -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">任务进度</div>
+                    </div>
+                    <div class="progress-container">
+                        <div class="progress-section">
+                            <div class="progress-title">爬取进度</div>
+                            <div class="progress-value">{{ crawlProgressText }}</div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" :class="crawlProgressClass" :style="{ width: crawlProgressWidth }"></div>
+                            </div>
+                        </div>
+                        <div class="progress-section">
+                            <div class="progress-title">下载进度</div>
+                            <div class="progress-value">{{ downloadProgressText }}</div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" :class="downloadProgressClass" :style="{ width: downloadProgressWidth }"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">好评图片</div>
+                        <div class="card-actions">
+                            <span class="image-stats" v-show="totalImages > 0">共 {{ totalImages }} 张图片</span>
+                            <div class="download-buttons" v-show="totalImages > 0">
+                                <button class="button" @click="downloadAllImages">{{ downloadAllText }}</button>
+                                <button class="button secondary" v-show="selectedImageCount > 0" @click="clearAllSelection">取消选中</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="empty-state" v-show="totalImages === 0">
+                        <div class="empty-icon">📷</div>
+                        <div class="empty-title">暂无图片</div>
+                        <div class="empty-description">请先完成登录和图片搜索</div>
+                    </div>
+                    <div class="image-gallery" v-show="totalImages > 0">
+                        <div v-for="productGroup in productGroups" :key="productGroup.productId" class="product-group" :data-product-id="productGroup.productId">
+                            <div class="product-group-header">
+                                <div class="product-group-title">
+                                    <span class="product-number">商品{{ productGroup.productId + 1 }}:</span>
+                                    <span class="product-name">{{ productGroup.productTitle }}</span>
+                                </div>
+                                <div class="product-group-meta">
+                                    <span class="image-count">{{ productGroup.images.length }}张图片</span>
+                                    <div class="product-download-buttons">
+                                        <button class="product-action-btn" @click="downloadProductImages(productGroup.productLink, productGroup.productTitle)">
+                                            {{ getProductDownloadText(productGroup.productId) }}
+                                        </button>
+                                        <button class="product-action-btn secondary" v-show="getProductSelectedCount(productGroup.productId) > 0" @click="clearProductSelection(productGroup.productId)">
+                                            取消选中
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="product-images-grid" :data-product-id="productGroup.productId">
+                                <div v-for="(image, imageIndex) in productGroup.images" :key="`${productGroup.productId}-${imageIndex}`" 
+                                     class="image-card" 
+                                     :class="{ selected: isImageSelected(productGroup.productId, imageIndex) }"
+                                     :data-product-id="productGroup.productId" 
+                                     :data-image-index="imageIndex"
+                                     :data-image-url="image.url"
+                                     :data-image-title="image.productTitle"
+                                     draggable="true"
+                                     @click="toggleImageSelection(productGroup.productId, imageIndex)"
+                                     style="cursor: pointer;">
+                                    <div class="image-container" :class="{ loading: image.loading }">
+                                        <img :src="image.url" 
+                                             :alt="`${image.productTitle} - 图片${image.index}`" 
+                                             :title="`${image.productTitle} - 图片${image.index}`"
+                                             @load="image.loading = false" 
+                                             @error="handleImageError">
+                                        <div class="image-loading" v-show="image.loading">
+                                            <div class="loading-spinner"></div>
+                                        </div>
+                                        <div class="image-overlay">
+                                            <div class="image-actions">
+                                                <button class="image-action-btn" @click.stop="openImageModal(image.url, image.productTitle, imageIndex)">
+                                                    查看
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="image-info">
+                                        <div class="image-title">图片{{ image.index }}</div>
+                                        <div class="image-meta">
+                                            <span class="image-size">预览</span>
+                                        </div>
+                                    </div>
+                                    <div v-if="isImageSelected(productGroup.productId, imageIndex)" class="selection-badge">
+                                        {{ getImageSelectionOrder(productGroup.productId, imageIndex) }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 图片模态框 -->
+        <div class="image-modal" :class="{ show: showImageModal }" @click="closeImageModal">
+            <div class="image-modal-content" @click.stop>
+                <div class="image-modal-header">
+                    <div class="image-modal-title">{{ modalTitle }}</div>
+                    <button class="image-modal-close" @click="closeImageModal">&times;</button>
+                </div>
+                <div class="image-modal-body">
+                                            <img class="image-modal-image" :src="modalImageUrl" :alt="modalTitle" :title="modalTitle" role="img">
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- 图片模态框 -->
-    <div class="image-modal" id="imageModal">
-        <div class="image-modal-content">
-            <div class="image-modal-header">
-                <div class="image-modal-title" id="modalTitle">图片预览</div>
-                <button class="image-modal-close" onclick="closeImageModal()">&times;</button>
-            </div>
-            <div class="image-modal-body">
-                <img class="image-modal-image" id="modalImage" src="" alt="图片预览">
-            </div>
-        </div>
-    </div>
+            <script src="http://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script type="module" src="main.js"></script>
 </body>
 </html>

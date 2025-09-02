@@ -10,6 +10,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     console.log('[preload] getPluginResourcePath called with pluginName:', pluginName)
     return ipcRenderer.invoke('get-plugin-resource-path', pluginName)
   },
+  getPluginHttpUrl: (pluginName: string, subPath: string = 'dist/index.html') => {
+    console.log('[preload] getPluginHttpUrl called with:', { pluginName, subPath })
+    return ipcRenderer.invoke('get-plugin-http-url', pluginName, subPath)
+  },
+  // 通用invoke（受宿主白名单控制）
+  invoke: (channel: string, ...args: any[]) => {
+    console.log('[preload] invoke called with:', channel, args)
+    return ipcRenderer.invoke(channel, ...args)
+  },
   checkFileExists: (filePath: string) => {
     console.log('[preload] checkFileExists called with filePath:', filePath)
     return ipcRenderer.invoke('check-file-exists', filePath)
@@ -40,7 +49,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return ipcRenderer.invoke('trigger-event', pluginName, eventType, params)
     }
   },
-  downloadImagesAsZip: (images: Array<{url: string, productTitle: string, index: number}>) => {
+  downloadImagesAsZip: (images: Array<{url: string, index: number}>) => {
     console.log('[preload] downloadImagesAsZip called with images count:', images.length)
     return ipcRenderer.invoke('download-images-as-zip', images)
   },
