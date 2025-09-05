@@ -122,6 +122,14 @@ export class PluginManager {
       console.log('[PluginManager] startPluginProcess Found FFmpeg at:', ffmpegPath)
     }
 
+        // 设置 Chrome 路径环境变量
+    const chromePath = pathManager.getChromePath()
+    if (chromePath) {
+      env.CHROME_PATH = chromePath
+      env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = chromePath
+      console.log('[PluginManager] startPluginProcess Found Chrome at:', chromePath)
+    }
+
     console.log('[PluginManager] startPluginProcess forking process with entry:', entry)
     const child = fork(entry, [], { env })
     this.pluginProcesses.set(pluginName, child)

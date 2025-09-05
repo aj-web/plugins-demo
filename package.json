@@ -71,6 +71,10 @@
       {
         "from": "ffmpeg.exe",
         "to": "ffmpeg.exe"
+      },
+      {
+        "from": "chromium-1181",
+        "to": "chromium-1181"
       }
     ],
     "win": {

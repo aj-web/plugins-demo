@@ -24,46 +24,46 @@ async function startApp(): Promise<void> {
   
   try {
     logger.log('[startApp] 等待应用准备就绪...')
-    await app.whenReady()
+  await app.whenReady()
     logger.log('[startApp] 应用已准备就绪')
-    
+  
     // 启动插件静态服务器
     logger.log('[startApp] 启动插件静态服务器...')
-    staticServer.start()
+  staticServer.start()
     logger.log('[startApp] 插件静态服务器已启动')
-    
-    // Tracker 登录上报
+  
+  // Tracker 登录上报
     logger.log('[startApp] 读取配置文件...')
-    const config = configManager.getConfig()
+  const config = configManager.getConfig()
     logger.log('[startApp] 配置文件内容:', config)
-    
-    if (config.tracker?.enabled) {
+  
+  if (config.tracker?.enabled) {
       logger.log('[startApp] 初始化 Tracker...')
-      tracker = new TrackerUtil()
+    tracker = new TrackerUtil()
       ;(global as any).tracker = tracker
-      
-      try {
+    
+    try {
         logger.log('[startApp] Tracker 配置:', tracker.getConfig())
         const loginResult = await tracker.login()
         logger.log('[startApp] Tracker 登录成功:', loginResult)
-      } catch (e) {
+    } catch (e) {
         logger.warn('[startApp] Tracker 登录失败:', e)
-      }
-    } else {
-      logger.warn('[startApp] Tracker 未启用，跳过 Tracker 登录')
     }
-    
+  } else {
+      logger.warn('[startApp] Tracker 未启用，跳过 Tracker 登录')
+  }
+  
     logger.log('[startApp] 设置 IPC 处理器...')
-    setupIpcHandlers()
+  setupIpcHandlers()
     logger.log('[startApp] IPC 处理器已设置')
-    
-    // 创建主窗口
+  
+  // 创建主窗口
     logger.log('[startApp] 创建主窗口...')
-    windowManager.createMainWindow()
+  windowManager.createMainWindow()
     logger.log('[startApp] 主窗口已创建')
     
     logger.log('[startApp] 加载窗口内容...')
-    windowManager.loadContent()
+  windowManager.loadContent()
     logger.log('[startApp] 窗口内容加载完成')
     
     logger.log('[startApp] 应用启动完成')
@@ -110,9 +110,9 @@ process.on('unhandledRejection', (reason, promise) => {
 ipcMain.handle('get-plugins-status', async () => {
   logger.log('[ipc] get-plugins-status 被调用')
   try {
-    const result = pluginManager.getAvailablePlugins()
+  const result = pluginManager.getAvailablePlugins()
     logger.log('[ipc] get-plugins-status 返回结果:', result)
-    return result
+  return result
   } catch (error) {
     logger.error('[ipc] get-plugins-status 出错:', error)
     throw error

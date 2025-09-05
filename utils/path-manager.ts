@@ -112,6 +112,29 @@ class PathManager {
     return null
   }
 
+
+  getChromePath(): string | null {
+    const possiblePaths = [
+      // 打包环境：resources/chromium-1181/chrome-win/chrome.exe
+      this.isPackaged ? path.join(process.resourcesPath, 'chromium-1181', 'chrome-win', 'chrome.exe') : null,
+      // 开发环境：项目根目录下的 chromium-1181/chrome-win/chrome.exe
+      path.join(this.getAppRoot(), 'chromium-1181', 'chrome-win', 'chrome.exe'),
+      // 当前工作目录下的 chromium-1181/chrome-win/chrome.exe
+      path.join(process.cwd(), 'chromium-1181', 'chrome-win', 'chrome.exe'),
+      // 系统Chrome（备用）
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
+    ].filter(Boolean) as string[]
+  
+    for (const chromePath of possiblePaths) {
+      if (fs.existsSync(chromePath)) {
+        return chromePath
+      }
+    }
+    return null
+  }
+
+
   /**
    * 检查插件是否存在
    * @param {string} pluginName 插件名称
