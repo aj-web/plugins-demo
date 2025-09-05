@@ -121,9 +121,6 @@ class PathManager {
       path.join(this.getAppRoot(), 'chromium-1181', 'chrome-win', 'chrome.exe'),
       // 当前工作目录下的 chromium-1181/chrome-win/chrome.exe
       path.join(process.cwd(), 'chromium-1181', 'chrome-win', 'chrome.exe'),
-      // 系统Chrome（备用）
-      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
     ].filter(Boolean) as string[]
   
     for (const chromePath of possiblePaths) {
