@@ -75,11 +75,11 @@ class Login1688Node {
             this.page = await this.context.newPage();
 
             // 尝试加载本地cookies
-            console.log('尝试加载本地cookies...');
-            const cookiesLoaded = await this.loadCookiesFromFile();
-            if (cookiesLoaded) {
-                console.log('本地cookies加载成功，尝试直接访问1688...');
-            }
+            // console.log('尝试加载本地cookies...');
+            // const cookiesLoaded = await this.loadCookiesFromFile();
+            // if (cookiesLoaded) {
+            //     console.log('本地cookies加载成功，尝试直接访问1688...');
+            // }
 
             // 导航到1688登录页面
             console.log('导航到1688登录页面...');
@@ -104,7 +104,7 @@ class Login1688Node {
                 await this.saveCookiesToMemory();
                 
                 // 保存cookies到本地文件
-                await this.saveCookiesToFile();
+                // await this.saveCookiesToFile();
                 
                 // 等待3秒
                 console.log('等待3秒后关闭浏览器...');

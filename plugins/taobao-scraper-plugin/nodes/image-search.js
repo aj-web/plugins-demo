@@ -36,7 +36,7 @@ class ImageSearchNode {
             ];
 
             this.browser = await chromium.launch({
-                headless: true,
+                headless: false,
                 args: browserArgs
             });
 
@@ -197,7 +197,7 @@ class ImageSearchNode {
      */
     async refreshPage() {
         try {
-            console.log('🔄 刷新页面避免弹窗...');
+            console.log(' 刷新页面避免弹窗...');
             await this.page.reload();
             await this.page.waitForTimeout(10000);
 
@@ -314,7 +314,7 @@ class ImageSearchNode {
     async uploadImageSearch(filePath) {
         console.log('uploadImageSearch', filePath);
         try {
-            console.log(`📸 开始图片搜索: ${filePath}`);
+            console.log(` 开始图片搜索: ${filePath}`);
 
             // 加载本地图片文件
             const filePayload = await this.loadImageByPath(filePath);
@@ -426,7 +426,7 @@ class ImageSearchNode {
             }
 
             // 等待页面跳转和加载
-            console.log('⏳ 等待图片搜索页面加载...');
+            console.log(' 等待图片搜索页面加载...');
             await this.page.waitForTimeout(5000);
 
             // 检查是否成功跳转到图片搜索页面（可选检查，不影响功能）
@@ -434,7 +434,7 @@ class ImageSearchNode {
             console.log(`当前页面URL: ${newUrl}`);
             
             // 2. 上传图片
-            console.log('📤 上传图片...');
+            console.log(' 上传图片...');
             try {
                 // 等待上传按钮出现
                 console.log('等待上传按钮出现...');
@@ -514,7 +514,7 @@ class ImageSearchNode {
 
                 // 如果仍然没有找到，尝试直接访问上传页面
                 if (!uploadButton) {
-                    console.log('❌ 仍然未找到上传按钮，尝试直接访问上传页面');
+                    console.log(' 仍然未找到上传按钮，尝试直接访问上传页面');
                     try {
                         await this.page.goto('https://s.taobao.com/search?q=&tab=all&search_type=img&upload=true', {
                             waitUntil: 'domcontentloaded'
@@ -541,7 +541,7 @@ class ImageSearchNode {
                 }
 
                 if (!uploadButton) {
-                    console.log('❌ 无法找到上传按钮，图片搜索失败');
+                    console.log(' 无法找到上传按钮，图片搜索失败');
                     return false;
                 }
 
@@ -622,7 +622,7 @@ class ImageSearchNode {
             }
 
             // 等待图片上传完成
-            console.log('⏳ 等待图片上传完成...');
+            console.log(' 等待图片上传完成...');
             await this.page.waitForTimeout(5000);
 
             // 3. 点击搜索按钮并等待新窗口
@@ -670,7 +670,7 @@ class ImageSearchNode {
 
             // 等待新窗口打开
             try {
-                console.log('⏳ 等待搜索结果页面打开...');
+                console.log(' 等待搜索结果页面打开...');
                 if (newPage) {
                     console.log(`新窗口已打开: ${newPage.url()}`);
                     this.page = newPage;
@@ -704,7 +704,7 @@ class ImageSearchNode {
             let tmallCount = 0;
 
             // 等待搜索结果页面加载
-            console.log('⏳ 等待搜索结果页面加载...');
+            console.log(' 等待搜索结果页面加载...');
 
             // 尝试多种可能的商品容器选择器
             const containerSelectors = [
@@ -806,11 +806,11 @@ class ImageSearchNode {
                         } else if (link.includes('tmall.com')) {
                             productSource = '天猫';
                             tmallCount++;
-                            console.log(`⚠️ 过滤掉天猫商品: ${link}`);
+                            console.log(` 过滤掉天猫商品: ${link}`);
                             continue; // 跳过天猫商品
                         } else {
                             productSource = '其他';
-                            console.log(`⚠️ 未知来源商品: ${link}`);
+                            console.log(` 未知来源商品: ${link}`);
                             continue; // 跳过未知来源商品
                         }
                     } else {
@@ -855,14 +855,14 @@ class ImageSearchNode {
                     };
 
                     results.push(result);
-                    console.log(`✅ 第${results.length}个淘宝商品提取成功:`);
+                    console.log(` 第${results.length}个淘宝商品提取成功:`);
                     console.log(`   标题: ${title.substring(0, 50)}...`);
                     console.log(`   链接: ${link}`);
                     console.log(`   来源: ${productSource}`);
 
                     // 如果已经收集到15个淘宝商品，就停止
                     if (results.length >= 15) {
-                        console.log(`🎯 已收集到 ${results.length} 个淘宝商品，停止提取`);
+                        console.log(` 已收集到 ${results.length} 个淘宝商品，停止提取`);
                         break;
                 }
                 } catch (e) {
@@ -871,7 +871,7 @@ class ImageSearchNode {
                 }
             }
 
-            console.log(`📊 提取结果统计:`);
+            console.log(` 提取结果统计:`);
             console.log(`   淘宝商品: ${results.length} 个`);
             console.log(`   过滤天猫: ${tmallCount} 个`);
             console.log(`   总处理: ${taobaoCount + tmallCount} 个`);
@@ -942,7 +942,7 @@ class ImageSearchNode {
                 }
 
                 // 等待结果页面加载
-                console.log('⏳ 等待搜索结果加载...');
+                console.log(' 等待搜索结果加载...');
                 await this.page.waitForTimeout(5000);
                 
                 // 提取搜索结果
@@ -958,7 +958,7 @@ class ImageSearchNode {
             
             // 直接调用爬取评价图片
             console.log('开始爬取评价图片...');
-            const crawlResults = await this.crawlReviewImages(results, 0, 15);
+            const crawlResults = await this.crawlReviewImages(results, 0, 15, 60);
             
             // 将爬取结果合并到搜索结果中
             const enhancedResults = results.map((product, index) => {
@@ -997,15 +997,19 @@ class ImageSearchNode {
         }
     }
 
-    /**
-     * 爬取评价图片
+    
+
+        /**
+     * 爬取评价图片 - 优化版本
      * @param {Array} searchResults - 搜索结果数组
      * @param {number} index - 开始爬取的索引
-     * @param {number} judgeNum - 判断商品是否有效的图片数量阈值，默认20张
+     * @param {number} judgeNum - 单个商品图片数量门槛，默认20张
+     * @param {number} totalNum - 目标图片总数，默认60张
      */
-    async crawlReviewImages(searchResults, index = 0, judgeNum = 20) {
-        console.log(`🖼️ 开始爬取评价图片，起始索引: ${index}，判断数量: ${judgeNum}`);
+    async crawlReviewImages(searchResults, index = 0, judgeNum = 20, totalNum = 60) {
+        console.log(`开始爬取评价图片，起始索引: ${index}，单品门槛: ${judgeNum}张，总目标: ${totalNum}张`);
 
+        // 基础检查
         if (!searchResults || searchResults.length === 0) {
             console.log('没有搜索结果，无法爬取评价图片');
             return [];
@@ -1015,198 +1019,92 @@ class ImageSearchNode {
             console.log('浏览器未启动，请先执行搜索');
             return [];
         }
-
-        // 保存搜索结果到实例变量，供内部方法使用
         this.searchResults = searchResults;
-
+        
         const results = [];
-        const imagesPerProduct = 20; // 每个商品固定爬取20张图片
-        let totalImagesCollected = 0; // 统计总共收集的图片数量
-        let processedProductsCount = 0; // 已处理的商品数量（包括补偿商品）
-        const maxProducts = 15; // 最多处理15个商品
-        const compensationQueue = []; // 需要补偿的商品队列
+        const imagesPerProduct = 20; // 每个商品爬取20张图片
+        let validImagesCollected = 0; // 有效图片总数（只计算>=judgeNum的商品）
+        let currentIndex = index; // 当前处理的商品索引
+        
+        console.log(`策略：每个商品爬取 ${imagesPerProduct} 张图片，>=  ${judgeNum} 张才计入总数`);
 
-        console.log(`爬取策略：每个商品固定 ${imagesPerProduct} 张图片，有效判断数量: ${judgeNum}，最多处理 ${maxProducts} 个商品`);
-
-        // 计算要爬取的商品范围：从index开始，爬取后3个商品
-        const startIndex = index;
-        const endIndex = Math.min(index + 3, searchResults.length);
-        const productsToCrawl = searchResults.slice(startIndex, endIndex);
-
-        console.log(`爬取范围：第 ${startIndex + 1} 到第 ${endIndex} 个淘宝商品（共 ${productsToCrawl.length} 个）`);
-
-        // 第一轮：爬取计划内的商品
-        for (let i = 0; i < productsToCrawl.length && processedProductsCount < maxProducts; i++) {
-            const actualIndex = startIndex + i; // 实际的商品索引
-            const product = productsToCrawl[i];
-            const productUrl = product.link;
+        // 持续爬取直到达到总目标或用完所有商品
+        while (currentIndex < searchResults.length && validImagesCollected < totalNum) {
+            const product = searchResults[currentIndex];
             
-            if (!productUrl) {
-                console.log(`第 ${actualIndex + 1} 个商品没有有效链接，跳过`);
+            if (!product || !product.link) {
+                console.log(`第 ${currentIndex + 1} 个商品没有有效链接，跳过`);
+                currentIndex++;
                 continue;
             }
 
-            console.log(`\n正在处理第 ${actualIndex + 1} 个淘宝商品: ${product.title || '未知商品'}`);
-            console.log(`商品链接: ${productUrl}`);
+            console.log(`\n正在处理第 ${currentIndex + 1} 个商品: ${product.title || '未知商品'}`);
+            console.log(`当前有效图片: ${validImagesCollected}/${totalNum}`);
 
             try {
                 // 访问商品详情页
-                console.log('访问商品详情页...');
-                await this.page.goto(productUrl, { waitUntil: 'domcontentloaded' });
+                await this.page.goto(product.link, { waitUntil: 'domcontentloaded' });
                 await this.page.waitForTimeout(3000);
 
-                // 检查登录状态（只处理淘宝商品）
+                // 检查登录状态
                 const isLoggedIn = await this.checkLoginStatus();
-                if (isLoggedIn) {
-                    console.log('登录状态正常');
-                } else {
-                    console.log('登录状态异常，尝试重新登录');
-                    const reLoginResult = await this.checkLoginStatus();
-                    if (!reLoginResult) {
-                        console.log('重新登录失败，跳过此商品');
-                        continue;
-                    }
+                if (!isLoggedIn) {
+                    console.log('登录状态异常，跳过此商品');
+                    currentIndex++;
+                    continue;
                 }
 
-                // 爬取此商品的评价图片URL
-                const imageUrls = await this.crawlProductReviewImages(actualIndex + 1, imagesPerProduct);
-
-                // 统计图片数量
+                // 爬取此商品的评价图片
+                const imageUrls = await this.crawlProductReviewImages(currentIndex + 1, imagesPerProduct);
                 const imagesCount = imageUrls.length;
-                totalImagesCollected += imagesCount;
-                processedProductsCount++;
-
-                // 检查是否需要补偿（不足judgeNum张图片）
-                if (imagesCount < judgeNum) {
-                    console.log(`⚠️ 第 ${actualIndex + 1} 个商品只获得 ${imagesCount} 张图片（少于${judgeNum}张），需要补偿`);
-                    compensationQueue.push({
-                        originalIndex: actualIndex,
-                        originalProduct: product,
-                        collected: imagesCount,
-                        needed: judgeNum - imagesCount
+                
+                if (imagesCount > 0) {
+                    // 保存结果（所有有图片的商品都保存）
+                    results.push({
+                        productIndex: currentIndex,
+                        title: product.title || `商品${currentIndex + 1}`,
+                        links: imageUrls,
+                        imagesCount: imagesCount,
+                        isValid: imagesCount >= judgeNum // 标记是否达到门槛
                     });
+
+                    // 只有达到门槛的商品才计入总目标
+                    if (imagesCount >= judgeNum) {
+                        validImagesCollected += imagesCount;
+                        console.log(`第 ${currentIndex + 1} 个商品完成，获得 ${imagesCount} 张图片（达到门槛），累计有效 ${validImagesCollected} 张`);
+                    } else {
+                        console.log(`第 ${currentIndex + 1} 个商品完成，获得 ${imagesCount} 张图片（未达门槛 ${judgeNum}），不计入总数`);
+                    }
+                } else {
+                    console.log(`第 ${currentIndex + 1} 个商品没有找到图片，跳过`);
                 }
-
-                // 构建结果
-                const result = {
-                    productIndex: actualIndex,
-                    title: product.title || `商品${actualIndex + 1}`,
-                    links: imageUrls,
-                    imagesCount: imagesCount
-                };
-                results.push(result);
-
-                console.log(`第 ${actualIndex + 1} 个商品爬取完成，获得 ${imagesCount} 张图片`);
 
             } catch (error) {
-                console.log(`处理第 ${actualIndex + 1} 个商品时出错: ${error}`);
-                continue;
+                console.log(`处理第 ${currentIndex + 1} 个商品时出错: ${error.message}`);
             }
+
+            currentIndex++;
         }
 
-        // 补偿轮次：处理需要补偿的商品
-        if (totalImagesCollected < judgeNum && compensationQueue.length > 0) {
-            console.log(`\n🔄 开始补偿爬取，总共获得 ${totalImagesCollected} 张图片，少于 ${judgeNum} 张`);
-            
-            // 记录已处理的商品索引，避免重复
-            const processedIndices = new Set();
-            results.forEach(r => processedIndices.add(r.productIndex));
-            
-            // 寻找新的商品进行补偿，而不是为每个补偿项都寻找
-            let nextIndex = Math.max(...Array.from(processedIndices)) + 1;
-            let compensationAttempts = 0;
-            const maxCompensationAttempts = 10; // 最多尝试10次补偿
-            
-            while (totalImagesCollected < judgeNum && 
-                   nextIndex < searchResults.length && 
-                   processedProductsCount < maxProducts &&
-                   compensationAttempts < maxCompensationAttempts) {
-                
-                const compensationProduct = searchResults[nextIndex];
-                if (compensationProduct && compensationProduct.link && !processedIndices.has(nextIndex)) {
-                    console.log(`\n🔄 补偿爬取第 ${nextIndex + 1} 个淘宝商品: ${compensationProduct.title || '未知商品'}`);
-                    console.log(`商品链接: ${compensationProduct.link}`);
-                    
-                    try {
-                        // 访问商品详情页
-                        console.log('访问商品详情页...');
-                        await this.page.goto(compensationProduct.link, { waitUntil: 'domcontentloaded' });
-                        await this.page.waitForTimeout(3000);
-                        
-                        // 检查登录状态
-                        const isLoggedIn = await this.checkLoginStatus();
-                        if (isLoggedIn) {
-                            console.log('登录状态正常');
-                        } else {
-                            console.log('登录状态异常，尝试重新登录');
-                            const reLoginResult = await this.checkLoginStatus();
-                            if (!reLoginResult) {
-                                console.log('重新登录失败，跳过此商品');
-                                nextIndex++;
-                                compensationAttempts++;
-                                continue;
-                            }
-                        }
-                        
-                        // 爬取此商品的评价图片URL（补偿商品也爬取20张）
-                        const compensationImageUrls = await this.crawlProductReviewImages(nextIndex + 1, imagesPerProduct);
-                        
-                        const compensationImagesCount = compensationImageUrls.length;
-                        totalImagesCollected += compensationImagesCount;
-                        processedProductsCount++;
-                        processedIndices.add(nextIndex);
+        // 统计结果
+        const validProducts = results.filter(r => r.isValid).length;
+        const invalidProducts = results.filter(r => !r.isValid).length;
 
-                        // 构建补偿结果
-                        const compensationResult = {
-                            productIndex: nextIndex,
-                            title: compensationProduct.title || `商品${nextIndex + 1}`,
-                            links: compensationImageUrls,
-                            imagesCount: compensationImagesCount,
-                            isCompensation: true
-                        };
-                        results.push(compensationResult);
-                        
-                        console.log(`🔄 补偿商品第 ${nextIndex + 1} 个爬取完成，获得 ${compensationImagesCount} 张图片`);
-
-                        // 检查是否已经达到目标数量
-                        if (totalImagesCollected >= judgeNum) {
-                            console.log(`补偿爬取完成，总共获得 ${totalImagesCollected} 张图片，已达到目标数量 ${judgeNum}`);
-                            break;
-                        }
-
-                    } catch (error) {
-                        console.log(`补偿爬取第 ${nextIndex + 1} 个商品时出错: ${error}`);
-                    }
-                }
-                
-                nextIndex++;
-                compensationAttempts++;
-                
-                // 如果已经尝试了足够多的补偿，停止
-                if (compensationAttempts >= maxCompensationAttempts) {
-                    console.log(`已达到最大补偿尝试次数 ${maxCompensationAttempts}，停止补偿爬取`);
-                    break;
-                }
-            }
-        }
-
-        // 统计最终结果
-        const originalProducts = results.filter(r => !r.isCompensation).length;
-        const compensationProducts = results.filter(r => r.isCompensation).length;
-        const totalProducts = results.length;
-
-        console.log(`\n📊 评价图片爬取完成统计:`);
-        console.log(`   原始商品数量: ${originalProducts} 个`);
-        console.log(`   补偿商品数量: ${compensationProducts} 个`);
-        console.log(`   总共处理商品数量: ${totalProducts} 个`);
-        console.log(`   总共收集图片数量: ${totalImagesCollected} 张`);
+        console.log(`\n爬取完成统计:`);
+        console.log(`  处理商品总数: ${results.length} 个`);
+        console.log(`  达到门槛商品: ${validProducts} 个`);
+        console.log(`  未达门槛商品: ${invalidProducts} 个`);
+        console.log(`  有效图片总数: ${validImagesCollected} 张`);
+        console.log(`  目标完成度: ${validImagesCollected}/${totalNum} (${((validImagesCollected/totalNum)*100).toFixed(1)}%)`);
         
-        if (totalImagesCollected < judgeNum) {
-            console.log(`   未达到目标图片数量: ${totalImagesCollected}/${judgeNum} 张`);
-        } else {
-            console.log(`   已达到目标图片数量: ${totalImagesCollected}/${judgeNum} 张`);
+        if (currentIndex >= searchResults.length) {
+            console.log(`  已用完所有 ${searchResults.length} 个商品`);
         }
         
+        if (validImagesCollected >= totalNum) {
+            console.log(`  已达到目标图片数量`);
+        }
+
         return results;
     }
 
@@ -1465,7 +1363,7 @@ class ImageSearchNode {
                 console.log('滚动容器状态:', containerInfo);
                 
                 if (!containerInfo.canScroll) {
-                    console.log('⚠️ 容器内容不足以滚动，可能评价还未加载完成');
+                    console.log(' 容器内容不足以滚动，可能评价还未加载完成');
                 }
             } catch (error) {
                 console.log('检查滚动容器状态失败:', error);
@@ -1541,7 +1439,7 @@ class ImageSearchNode {
             }
 
             // 6. 遍历每条评价，提取图片URL
-            console.log(`📸 开始提取图片URL (目标: ${maxImages}张)`);
+            console.log(` 开始提取图片URL (目标: ${maxImages}张)`);
 
             for (let commentIndex = 0; commentIndex < comments.length; commentIndex++) {
                 if (imageUrls.length >= maxImages) {

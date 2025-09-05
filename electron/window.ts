@@ -1,6 +1,7 @@
 import { BrowserWindow } from 'electron'
 import path from 'path'
 import fs from 'fs'
+import { logger } from './logger'
 
 export class WindowManager {
   private mainWindow: BrowserWindow | null = null
@@ -9,11 +10,26 @@ export class WindowManager {
     this.mainWindow = new BrowserWindow({
       width: 1200,
       height: 800,
+      show: false,
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
         contextIsolation: true,
         nodeIntegration: false
       }
+    })
+
+    // 只在开发环境打开 DevTools
+    if (process.env.NODE_ENV === 'development') {
+      this.mainWindow.webContents.openDevTools()
+    }
+
+    // 窗口准备就绪后显示
+    this.mainWindow.once('ready-to-show', () => {
+      this.mainWindow?.show()
+    })
+
+    this.mainWindow.on('closed', () => {
+      this.mainWindow = null
     })
 
     return this.mainWindow
@@ -22,33 +38,17 @@ export class WindowManager {
   loadContent(): void {
     if (!this.mainWindow) return
 
-    // 开发环境
-    if (process.env.NODE_ENV === 'development') {
-      this.loadLocalFile()
-      this.mainWindow.webContents.openDevTools()
-    } else {
-      // 生产环境
-      this.loadLocalFile()
-    }
-  }
-
-  private loadLocalFile(): void {
-    if (!this.mainWindow) return
-
-    // 尝试加载构建后的文件
     const indexPath = path.join(__dirname, '../dist/index.html')
+    
     if (fs.existsSync(indexPath)) {
-      console.log('加载构建后的文件:', indexPath)
       this.mainWindow.loadFile(indexPath)
     } else {
-      // 如果dist目录不存在，尝试加载根目录的index.html
+      // 开发环境回退到根目录
       const rootIndexPath = path.join(__dirname, '../index.html')
       if (fs.existsSync(rootIndexPath)) {
-        console.log('加载根目录文件:', rootIndexPath)
         this.mainWindow.loadFile(rootIndexPath)
       } else {
-        console.error('找不到index.html文件')
-        this.mainWindow.loadURL('data:text/html,<h1>找不到index.html文件</h1><p>请先运行 npm run build 构建前端代码</p>')
+        this.mainWindow.loadURL('data:text/html,<h1>找不到index.html文件</h1>')
       }
     }
   }

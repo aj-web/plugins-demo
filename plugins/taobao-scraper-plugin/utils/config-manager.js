@@ -1,7 +1,4 @@
 "use strict";
-/**
- * 配置管理类
- */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     var desc = Object.getOwnPropertyDescriptor(m, k);
@@ -37,164 +34,112 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConfigManager = void 0;
+const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
-const file_utils_1 = require("./file-utils");
+const os = __importStar(require("os"));
 class ConfigManager {
-    constructor() {
-        this.configPath = path.join(process.cwd(), 'config.json');
-        this.config = this.loadDefaultConfig();
+    constructor(configFileName = 'taobao-crawler-config.json') {
+        this.configPath = path.join(os.homedir(), '.taobao-crawler', configFileName);
+        this.config = {};
+        this.ensureConfigDirectory();
         this.loadConfig();
     }
-    /**
-     * 获取单例实例
-     */
-    static getInstance() {
-        if (!ConfigManager.instance) {
-            ConfigManager.instance = new ConfigManager();
+    ensureConfigDirectory() {
+        const configDir = path.dirname(this.configPath);
+        if (!fs.existsSync(configDir)) {
+            fs.mkdirSync(configDir, { recursive: true });
         }
-        return ConfigManager.instance;
     }
-    /**
-     * 获取配置
-     */
-    getConfig() {
+    loadConfig() {
+        try {
+            if (fs.existsSync(this.configPath)) {
+                const data = fs.readFileSync(this.configPath, 'utf8');
+                this.config = JSON.parse(data);
+                console.log(`[ConfigManager] 已加载配置文件: ${this.configPath}`);
+            }
+            else {
+                console.log(`[ConfigManager] 配置文件不存在，使用默认配置: ${this.configPath}`);
+                this.saveConfig();
+            }
+        }
+        catch (error) {
+            console.error(`[ConfigManager] 加载配置文件失败: ${error.message}`);
+            this.config = {};
+        }
+    }
+    saveConfig() {
+        try {
+            const data = JSON.stringify(this.config, null, 2);
+            fs.writeFileSync(this.configPath, data, 'utf8');
+            console.log(`[ConfigManager] 配置文件已保存: ${this.configPath}`);
+        }
+        catch (error) {
+            console.error(`[ConfigManager] 保存配置文件失败: ${error.message}`);
+        }
+    }
+    get(key, defaultValue) {
+        const keys = key.split('.');
+        let value = this.config;
+        for (const k of keys) {
+            if (value && typeof value === 'object' && k in value) {
+                value = value[k];
+            }
+            else {
+                return defaultValue;
+            }
+        }
+        return value;
+    }
+    set(key, value) {
+        const keys = key.split('.');
+        let current = this.config;
+        for (let i = 0; i < keys.length - 1; i++) {
+            const k = keys[i];
+            if (!(k in current) || typeof current[k] !== 'object') {
+                current[k] = {};
+            }
+            current = current[k];
+        }
+        current[keys[keys.length - 1]] = value;
+        this.saveConfig();
+    }
+    delete(key) {
+        const keys = key.split('.');
+        let current = this.config;
+        for (let i = 0; i < keys.length - 1; i++) {
+            const k = keys[i];
+            if (!(k in current) || typeof current[k] !== 'object') {
+                return false;
+            }
+            current = current[k];
+        }
+        const lastKey = keys[keys.length - 1];
+        if (lastKey in current) {
+            delete current[lastKey];
+            this.saveConfig();
+            return true;
+        }
+        return false;
+    }
+    getAll() {
         return { ...this.config };
     }
-    /**
-     * 更新配置
-     */
-    updateConfig(newConfig) {
-        this.config = { ...this.config, ...newConfig };
+    reset() {
+        this.config = {};
         this.saveConfig();
     }
-    /**
-     * 获取浏览器配置
-     */
-    getBrowserConfig() {
-        return { ...this.config.browser };
-    }
-    /**
-     * 获取搜索配置
-     */
-    getSearchConfig() {
-        return { ...this.config.search };
-    }
-    /**
-     * 获取工作流配置
-     */
-    getWorkflowConfig() {
-        return { ...this.config.workflow };
-    }
-    /**
-     * 加载默认配置
-     */
-    loadDefaultConfig() {
-        return {
-            browser: {
-                headless: false,
-                viewport: {
-                    width: 1920,
-                    height: 1080
-                },
-                userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                args: [
-                    "--no-sandbox",
-                    "--disable-blink-features=AutomationControlled",
-                    "--disable-web-security",
-                    "--disable-dev-shm-usage",
-                    "--disable-gpu"
-                ],
-                timeout: 30000
-            },
-            search: {
-                maxResults: 50,
-                delay: 1000,
-                retryCount: 3,
-                timeout: 30000
-            },
-            workflow: {
-                autoLogin: false,
-                saveScreenshots: true,
-                saveResults: true,
-                outputDir: "./output"
+    has(key) {
+        const keys = key.split('.');
+        let current = this.config;
+        for (const k of keys) {
+            if (current && typeof current === 'object' && k in current) {
+                current = current[k];
             }
-        };
-    }
-    /**
-     * 加载配置文件
-     */
-    loadConfig() {
-        const savedConfig = file_utils_1.FileUtils.loadJsonFromFile(this.configPath);
-        if (savedConfig) {
-            this.config = { ...this.config, ...savedConfig };
-        }
-    }
-    /**
-     * 保存配置到文件
-     */
-    saveConfig() {
-        file_utils_1.FileUtils.saveJsonToFile(this.config, this.configPath);
-    }
-    /**
-     * 重置为默认配置
-     */
-    resetToDefault() {
-        this.config = this.loadDefaultConfig();
-        this.saveConfig();
-    }
-    /**
-     * 验证配置
-     */
-    validateConfig() {
-        const errors = [];
-        // 验证浏览器配置
-        if (this.config.browser.viewport.width < 800 || this.config.browser.viewport.height < 600) {
-            errors.push("Viewport size too small");
-        }
-        if (this.config.browser.timeout && this.config.browser.timeout < 5000) {
-            errors.push("Browser timeout too short");
-        }
-        // 验证搜索配置
-        if (this.config.search.maxResults < 1 || this.config.search.maxResults > 1000) {
-            errors.push("Max results should be between 1 and 1000");
-        }
-        if (this.config.search.delay < 0) {
-            errors.push("Delay cannot be negative");
-        }
-        if (this.config.search.retryCount < 0 || this.config.search.retryCount > 10) {
-            errors.push("Retry count should be between 0 and 10");
-        }
-        // 验证工作流配置
-        if (!this.config.workflow.outputDir) {
-            errors.push("Output directory is required");
-        }
-        return {
-            isValid: errors.length === 0,
-            errors
-        };
-    }
-    /**
-     * 获取配置摘要
-     */
-    getConfigSummary() {
-        return {
-            browser: {
-                headless: this.config.browser.headless,
-                viewport: this.config.browser.viewport,
-                timeout: this.config.browser.timeout
-            },
-            search: {
-                maxResults: this.config.search.maxResults,
-                delay: this.config.search.delay,
-                retryCount: this.config.search.retryCount
-            },
-            workflow: {
-                autoLogin: this.config.workflow.autoLogin,
-                saveScreenshots: this.config.workflow.saveScreenshots,
-                saveResults: this.config.workflow.saveResults,
-                outputDir: this.config.workflow.outputDir
+            else {
+                return false;
             }
-        };
+        }
+        return true;
     }
 }
 exports.ConfigManager = ConfigManager;

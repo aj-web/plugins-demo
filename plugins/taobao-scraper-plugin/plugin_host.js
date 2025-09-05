@@ -9,16 +9,17 @@ process.on('message', async (msg) => {
     }
     if (msg && msg.jsFile) {
         try {
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
             const mod = require('./' + msg.jsFile);
             let result;
             if (msg.call && msg.call.class && msg.call.method) {
                 const Cls = mod[msg.call.class];
-                if (!Cls)
+                if (!Cls) {
                     throw new Error(`Class ${msg.call.class} not found`);
+                }
                 const instance = new Cls();
-                if (typeof instance[msg.call.method] !== 'function')
+                if (typeof instance[msg.call.method] !== 'function') {
                     throw new Error(`Method ${msg.call.method} not found`);
+                }
                 if (msg.call.method === 'processTasks' && Array.isArray(msg.call.args?.[0])) {
                     const tasks = msg.call.args[0];
                     const results = [];
@@ -26,12 +27,18 @@ process.on('message', async (msg) => {
                         if (shouldStop) {
                             shouldStop = false;
                             console.log('plugin_host.js sent stopped');
-                            process.send && process.send({ type: 'stopped', result: results });
+                            const response = {
+                                success: true,
+                                type: 'stopped',
+                                result: results
+                            };
+                            process.send && process.send(response);
                             return;
                         }
                         results.push(await instance[msg.call.method].call(instance, [tasks[i]]));
                     }
-                    process.send && process.send({ success: true, result: results });
+                    const response = { success: true, result: results };
+                    process.send && process.send(response);
                     return;
                 }
                 result = await instance[msg.call.method](...(msg.call.args || [msg.data || msg.folderPath]));
@@ -45,13 +52,16 @@ process.on('message', async (msg) => {
             else {
                 result = mod;
             }
-            process.send && process.send({ success: true, result });
+            const response = { success: true, result };
+            process.send && process.send(response);
         }
         catch (e) {
-            process.send && process.send({ success: false, error: e.message });
+            const response = { success: false, error: e.message };
+            process.send && process.send(response);
         }
     }
     else {
-        process.send && process.send({ success: false, error: 'No jsFile specified in message' });
+        const response = { success: false, error: 'No jsFile specified in message' };
+        process.send && process.send(response);
     }
 });

@@ -15,13 +15,10 @@ const dynamicAllowlist = new Set<string>()
 export function setupIpcHandlers(): void {
   console.log('[ipcHandlers] Setting up IPC handlers')
 
-  // 初始化 allowlist
-  configManager.getIpcAllowlist().forEach(c => dynamicAllowlist.add(c))
-  configManager.watchIpcAllowlist((list) => {
-    dynamicAllowlist.clear()
-    list.forEach(c => dynamicAllowlist.add(c))
-    console.log('[ipcHandlers] allowlist updated:', Array.from(dynamicAllowlist))
-  })
+  // 初始化 allowlist - 简化版本，不需要动态监听
+  const allowlist = configManager.getIpcAllowlist()
+  allowlist.forEach(c => dynamicAllowlist.add(c))
+  console.log('[ipcHandlers] IPC allowlist initialized:', Array.from(dynamicAllowlist))
   
   ipcMain.handle('get-ipc-allowlist', async () => {
     return Array.from(dynamicAllowlist)

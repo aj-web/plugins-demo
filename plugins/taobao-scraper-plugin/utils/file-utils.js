@@ -1,7 +1,4 @@
 "use strict";
-/**
- * 文件操作工具类
- */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     var desc = Object.getOwnPropertyDescriptor(m, k);
@@ -39,120 +36,110 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.FileUtils = void 0;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const crypto = __importStar(require("crypto"));
 class FileUtils {
-    /**
-     * 根据文件内容推断文件类型和扩展名
-     */
-    static inferFileType(content) {
-        // 检查文件魔数来判断文件类型
-        if (content.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) {
-            return {
-                contentType: "image/jpeg",
-                fileExtension: "jpg",
-                mimeType: "image/jpeg"
-            };
-        }
-        else if (content.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
-            return {
-                contentType: "image/png",
-                fileExtension: "png",
-                mimeType: "image/png"
-            };
-        }
-        else if (content.subarray(0, 6).equals(Buffer.from([0x47, 0x49, 0x46, 0x38, 0x37, 0x61])) ||
-            content.subarray(0, 6).equals(Buffer.from([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]))) {
-            return {
-                contentType: "image/gif",
-                fileExtension: "gif",
-                mimeType: "image/gif"
-            };
-        }
-        else if (content.subarray(0, 4).equals(Buffer.from([0x52, 0x49, 0x46, 0x46])) &&
-            content.subarray(8, 12).equals(Buffer.from([0x57, 0x45, 0x42, 0x50]))) {
-            return {
-                contentType: "image/webp",
-                fileExtension: "webp",
-                mimeType: "image/webp"
-            };
-        }
-        else if (content.subarray(0, 4).equals(Buffer.from([0x25, 0x50, 0x44, 0x46]))) {
-            return {
-                contentType: "application/pdf",
-                fileExtension: "pdf",
-                mimeType: "application/pdf"
-            };
-        }
-        else {
-            // 默认返回JPEG类型
-            return {
-                contentType: "image/jpeg",
-                fileExtension: "jpg",
-                mimeType: "image/jpeg"
-            };
-        }
-    }
-    /**
-     * 确保目录存在，如果不存在则创建
-     */
-    static ensureDirectoryExists(dirPath) {
+    static ensureDirectory(dirPath) {
         if (!fs.existsSync(dirPath)) {
             fs.mkdirSync(dirPath, { recursive: true });
         }
     }
-    /**
-     * 保存JSON数据到文件
-     */
-    static saveJsonToFile(data, filePath) {
-        const dir = path.dirname(filePath);
-        this.ensureDirectoryExists(dir);
-        fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
-    }
-    /**
-     * 从文件加载JSON数据
-     */
-    static loadJsonFromFile(filePath) {
+    static getFileInfo(filePath) {
         try {
-            if (fs.existsSync(filePath)) {
-                const content = fs.readFileSync(filePath, 'utf8');
-                return JSON.parse(content);
-            }
+            const stats = fs.statSync(filePath);
+            return {
+                name: path.basename(filePath),
+                path: filePath,
+                size: stats.size,
+                extension: path.extname(filePath),
+                isDirectory: stats.isDirectory(),
+                modifiedTime: stats.mtime
+            };
         }
         catch (error) {
-            console.error(`Error loading JSON from ${filePath}:`, error);
+            return null;
         }
-        return null;
     }
-    /**
-     * 读取文件内容
-     */
-    static readFile(filePath) {
+    static readFile(filePath, encoding = 'utf8') {
         try {
-            if (fs.existsSync(filePath)) {
-                return fs.readFileSync(filePath);
-            }
+            return fs.readFileSync(filePath, encoding);
         }
         catch (error) {
-            console.error(`Error reading file ${filePath}:`, error);
+            console.error(`读取文件失败: ${filePath}`, error);
+            return null;
         }
-        return null;
     }
-    /**
-     * 写入文件内容
-     */
-    static writeFile(filePath, content) {
-        const dir = path.dirname(filePath);
-        this.ensureDirectoryExists(dir);
-        fs.writeFileSync(filePath, content);
+    static writeFile(filePath, content, encoding = 'utf8') {
+        try {
+            this.ensureDirectory(path.dirname(filePath));
+            fs.writeFileSync(filePath, content, encoding);
+            return true;
+        }
+        catch (error) {
+            console.error(`写入文件失败: ${filePath}`, error);
+            return false;
+        }
     }
-    /**
-     * 检查文件是否存在
-     */
-    static fileExists(filePath) {
+    static copyFile(sourcePath, targetPath) {
+        try {
+            this.ensureDirectory(path.dirname(targetPath));
+            fs.copyFileSync(sourcePath, targetPath);
+            return true;
+        }
+        catch (error) {
+            console.error(`复制文件失败: ${sourcePath} -> ${targetPath}`, error);
+            return false;
+        }
+    }
+    static deleteFile(filePath) {
+        try {
+            if (fs.existsSync(filePath)) {
+                const stats = fs.statSync(filePath);
+                if (stats.isDirectory()) {
+                    fs.rmSync(filePath, { recursive: true, force: true });
+                }
+                else {
+                    fs.unlinkSync(filePath);
+                }
+                return true;
+            }
+            return false;
+        }
+        catch (error) {
+            console.error(`删除文件失败: ${filePath}`, error);
+            return false;
+        }
+    }
+    static listDirectory(dirPath) {
+        try {
+            if (!fs.existsSync(dirPath)) {
+                return [];
+            }
+            const files = fs.readdirSync(dirPath);
+            return files.map(file => {
+                const fullPath = path.join(dirPath, file);
+                return this.getFileInfo(fullPath);
+            }).filter((info) => info !== null);
+        }
+        catch (error) {
+            console.error(`列出目录失败: ${dirPath}`, error);
+            return [];
+        }
+    }
+    static getFileHash(filePath, algorithm = 'md5') {
+        try {
+            const content = fs.readFileSync(filePath);
+            const hash = crypto.createHash(algorithm);
+            hash.update(content);
+            return hash.digest('hex');
+        }
+        catch (error) {
+            console.error(`计算文件哈希失败: ${filePath}`, error);
+            return null;
+        }
+    }
+    static exists(filePath) {
         return fs.existsSync(filePath);
     }
-    /**
-     * 获取文件大小
-     */
     static getFileSize(filePath) {
         try {
             const stats = fs.statSync(filePath);
@@ -162,42 +149,28 @@ class FileUtils {
             return 0;
         }
     }
-    /**
-     * 获取文件扩展名
-     */
-    static getFileExtension(filePath) {
-        return path.extname(filePath).toLowerCase();
+    static formatFileSize(bytes) {
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        let size = bytes;
+        let unitIndex = 0;
+        while (size >= 1024 && unitIndex < units.length - 1) {
+            size /= 1024;
+            unitIndex++;
+        }
+        return `${size.toFixed(2)} ${units[unitIndex]}`;
     }
-    /**
-     * 生成唯一文件名
-     */
-    static generateUniqueFileName(originalName, suffix) {
-        const timestamp = Date.now();
-        const random = Math.random().toString(36).substring(2, 8);
-        const ext = path.extname(originalName);
-        const name = path.basename(originalName, ext);
-        const uniqueSuffix = suffix ? `_${suffix}` : '';
-        return `${name}_${timestamp}_${random}${uniqueSuffix}${ext}`;
+    static getTempDir() {
+        return path.join(require('os').tmpdir(), 'taobao-crawler');
     }
-    /**
-     * 清理临时文件
-     */
-    static cleanupTempFiles(tempDir, maxAge = 24 * 60 * 60 * 1000) {
+    static cleanupTempFiles() {
         try {
-            if (!fs.existsSync(tempDir))
-                return;
-            const files = fs.readdirSync(tempDir);
-            const now = Date.now();
-            files.forEach(file => {
-                const filePath = path.join(tempDir, file);
-                const stats = fs.statSync(filePath);
-                if (now - stats.mtime.getTime() > maxAge) {
-                    fs.unlinkSync(filePath);
-                }
-            });
+            const tempDir = this.getTempDir();
+            if (fs.existsSync(tempDir)) {
+                fs.rmSync(tempDir, { recursive: true, force: true });
+            }
         }
         catch (error) {
-            console.error('Error cleaning up temp files:', error);
+            console.error('清理临时文件失败:', error);
         }
     }
 }

@@ -1,60 +1,149 @@
 // 淘宝好评图爬取插件 - Vue 3 版本
 const { createApp, ref, computed, onMounted, nextTick } = Vue;
 
-    // 插件名称
-    const pluginName = 'taobao-scraper-plugin';
+// 插件名称
+const pluginName = 'taobao-scraper-plugin';
     
 // 创建 Vue 应用
 const app = createApp({
     setup() {
-        // 响应式状态
-        const isLoggedIn = ref(false);
-        const isLoggingIn = ref(false);
-        const is1688LoggedIn = ref(false);
-        const is1688LoggingIn = ref(false);
-        const currentPlatform = ref('taobao'); // 'taobao' 或 '1688'
-        const selectedImage = ref(null);
-        const skuId = ref(''); // 新增：SKU ID输入
-        const selectedImages = ref(new Set());
-        const selectedImageCount = ref(0);
-        const productGroups = ref([]);
-        const totalImages = ref(0);
+        // 平台数据隔离 - 每个平台维护独立的数据状态
+        const platformData = ref({
+            taobao: {
+                isLoggedIn: false,
+                isLoggingIn: false,
+                selectedImage: null,
+                skuId: '',
+                selectedImages: new Set(),
+                selectedImageCount: 0,
+                productGroups: [],
+                totalImages: 0,
+                currentSearchMode: 'sku'
+            },
+            1688: {
+                isLoggedIn: false,
+                isLoggingIn: false,
+                selectedImage: null,
+                skuId: '',
+                selectedImages: new Set(),
+                selectedImageCount: 0,
+                productGroups: [],
+                totalImages: 0,
+                currentSearchMode: 'sku'
+            }
+            // 未来可以轻松添加新平台，如：
+            // jd: { ... },
+            // pdd: { ... }
+        });
+
+        const currentPlatform = ref('taobao');
         
-        // 模态框状态
+        // 平台数据访问器 - 通过计算属性访问当前平台的数据
+        const currentPlatformData = computed(() => platformData.value[currentPlatform.value]);
+
+        // 为每个数据项创建计算属性，实现平台数据隔离
+        const isLoggedIn = computed({
+            get: () => currentPlatformData.value.isLoggedIn,
+            set: (value) => { currentPlatformData.value.isLoggedIn = value; }
+        });
+
+        const isLoggingIn = computed({
+            get: () => currentPlatformData.value.isLoggingIn,
+            set: (value) => { currentPlatformData.value.isLoggingIn = value; }
+        });
+
+        const selectedImage = computed({
+            get: () => currentPlatformData.value.selectedImage,
+            set: (value) => { currentPlatformData.value.selectedImage = value; }
+        });
+
+        const skuId = computed({
+            get: () => currentPlatformData.value.skuId,
+            set: (value) => { currentPlatformData.value.skuId = value; }
+        });
+
+        const selectedImages = computed({
+            get: () => currentPlatformData.value.selectedImages,
+            set: (value) => { currentPlatformData.value.selectedImages = value; }
+        });
+
+        const selectedImageCount = computed({
+            get: () => currentPlatformData.value.selectedImageCount,
+            set: (value) => { currentPlatformData.value.selectedImageCount = value; }
+        });
+
+        const productGroups = computed({
+            get: () => currentPlatformData.value.productGroups,
+            set: (value) => { currentPlatformData.value.productGroups = value; }
+        });
+
+        const totalImages = computed({
+            get: () => currentPlatformData.value.totalImages,
+            set: (value) => { currentPlatformData.value.totalImages = value; }
+        });
+
+        const currentSearchMode = computed({
+            get: () => currentPlatformData.value.currentSearchMode,
+            set: (value) => { currentPlatformData.value.currentSearchMode = value; }
+        });
+        
+        // 搜索状态管理（全局状态，不需要平台隔离）
+        const isSearching = ref(false);
+        
+        // 模态框状态（全局状态，不需要平台隔离）
         const showImageModal = ref(false);
         const modalImageUrl = ref('');
         const modalTitle = ref('');
         
-        // 进度状态
+        // 进度状态（全局状态，不需要平台隔离）
         const crawlProgress = ref({ current: 0, total: 0, status: 'not_started' });
         const downloadProgress = ref({ current: 0, total: 0, status: 'not_started' });
         
         // 序列号计数器
         let seq = 0;
         
+        // 平台管理工具函数
+        const getPlatformName = (platform) => {
+            const names = {
+                taobao: '淘宝',
+                1688: '1688',
+                jd: '京东',
+                pdd: '拼多多'
+            };
+            return names[platform] || platform;
+        };
+
+        const getAllPlatforms = () => {
+            return Object.keys(platformData.value);
+        };
+
+        const getPlatformStatus = (platform) => {
+            return {
+                isLoggedIn: platformData.value[platform].isLoggedIn,
+                hasData: platformData.value[platform].productGroups.length > 0,
+                totalImages: platformData.value[platform].totalImages
+            };
+        };
+        
         // 计算属性
         const step1Class = computed(() => {
-            if (currentPlatform.value === 'taobao' && isLoggedIn.value) return 'completed';
-            if (currentPlatform.value === '1688' && is1688LoggedIn.value) return 'completed';
+            if (isLoggedIn.value) return 'completed';
             return 'active';
         });
         
         const step1Text = computed(() => {
-            if (currentPlatform.value === 'taobao' && isLoggedIn.value) return '✓';
-            if (currentPlatform.value === '1688' && is1688LoggedIn.value) return '✓';
+            if (isLoggedIn.value) return '✓';
             return '1';
         });
         
         const step2Class = computed(() => {
-            const isPlatformLoggedIn = currentPlatform.value === 'taobao' ? isLoggedIn.value : is1688LoggedIn.value;
-            if (selectedImage.value && isPlatformLoggedIn) return 'active';
+            if (selectedImage.value && isLoggedIn.value) return 'active';
             if (selectedImage.value) return 'completed';
             return 'pending';
         });
         
         const step2Text = computed(() => {
-            const isPlatformLoggedIn = currentPlatform.value === 'taobao' ? isLoggedIn.value : is1688LoggedIn.value;
-            if (selectedImage.value && isPlatformLoggedIn) return '2';
+            if (selectedImage.value && isLoggedIn.value) return '2';
             if (selectedImage.value) return '✓';
             return '2';
         });
@@ -212,13 +301,15 @@ const app = createApp({
         // 检查登录状态
         const checkLoginStatus = async () => {
             try {
-                const response = await triggerEvent('taobao-login-check', {});
+                const eventType = currentPlatform.value === 'taobao' ? 'taobao-login-check' : '1688-login-check';
+                const response = await triggerEvent(eventType, {});
                 console.log('登录状态检查结果:', response);
                 const loggedIn = response.success && response.result && response.result.success;
                 isLoggedIn.value = loggedIn;
                 
                 if (loggedIn) {
-                    showNotification('已登录淘宝', 'success');
+                    const platformName = getPlatformName(currentPlatform.value);
+                    showNotification(`已登录${platformName}`, 'success');
                 }
             } catch (error) {
                 console.error('检查登录状态失败:', error);
@@ -255,20 +346,19 @@ const app = createApp({
 
         // 开始1688登录
         const start1688Login = async () => {
-            if (is1688LoggingIn.value) return;
+            if (isLoggingIn.value) return;
             
-            is1688LoggingIn.value = true;
+            isLoggingIn.value = true;
             showNotification('正在启动1688登录流程...', 'info');
             
             try {
-                // 启动1688登录流程（包含等待登录完成）
                 const loginResponse = await triggerEvent('1688-login', {});
                 console.log('1688登录响应:', loginResponse);
                 
                 if (loginResponse.success && loginResponse.result && loginResponse.result.success) {
-                        is1688LoggedIn.value = true;
-                        currentPlatform.value = '1688';
-                        showNotification('1688登录成功！', 'success');
+                    isLoggedIn.value = true;
+                    currentPlatform.value = '1688';
+                    showNotification('1688登录成功！', 'success');
                 } else {
                     const errorMsg = loginResponse.result?.message || loginResponse.error || '登录失败';
                     showNotification(errorMsg, 'error');
@@ -277,23 +367,18 @@ const app = createApp({
                 console.error('1688登录失败:', error);
                 showNotification('1688登录失败: ' + error.message, 'error');
             } finally {
-                is1688LoggingIn.value = false;
+                isLoggingIn.value = false;
             }
         };
 
-        // 切换平台
+        // 切换平台 - 现在只是切换，不清空数据
         const switchPlatform = (platform) => {
+            console.log(`从 ${currentPlatform.value} 切换到 ${platform}`);
             currentPlatform.value = platform;
-            // 清空之前的选择和结果
-            selectedImage.value = null;
-            skuId.value = ''; // 清空SKU ID
-            selectedImages.value.clear();
-            selectedImageCount.value = 0;
-            productGroups.value = [];
-            totalImages.value = 0;
-            updateCrawlProgress(0, 0, 'not_started');
-            updateDownloadProgress(0, 0, 'not_started');
-            showNotification(`已切换到${platform === 'taobao' ? '淘宝' : '1688'}平台`, 'info');
+            
+            // 显示切换通知
+            const platformName = getPlatformName(platform);
+            showNotification(`已切换到${platformName}平台`, 'info');
         };
     
         // 选择图片
@@ -328,11 +413,14 @@ const app = createApp({
             }
             
             // 检查当前平台的登录状态
-            const isPlatformLoggedIn = currentPlatform.value === 'taobao' ? isLoggedIn.value : is1688LoggedIn.value;
-            if (!isPlatformLoggedIn) {
-                showNotification(`请先登录${currentPlatform.value === 'taobao' ? '淘宝' : '1688'}`, 'warning');
+            if (!isLoggedIn.value) {
+                const platformName = getPlatformName(currentPlatform.value);
+                showNotification(`请先登录${platformName}`, 'warning');
                 return;
             }
+            
+            // 设置搜索状态为进行中
+            isSearching.value = true;
             
             // 更新爬取进度为进行中
             updateCrawlProgress(0, 1, 'processing');
@@ -401,6 +489,9 @@ const app = createApp({
                 console.error('搜索失败:', error);
                 updateCrawlProgress(1, 1, 'error');
                 showNotification('搜索失败: ' + error.message, 'error');
+            } finally {
+                // 搜索完成，恢复搜索按钮状态
+                isSearching.value = false;
             }
         };
         
@@ -440,7 +531,7 @@ const app = createApp({
             const key = `${productId}-${imageIndex}`;
             if (selectedImages.value.has(key)) {
                 selectedImages.value.delete(key);
-        } else {
+            } else {
                 selectedImages.value.add(key);
             }
             selectedImageCount.value = selectedImages.value.size;
@@ -467,56 +558,56 @@ const app = createApp({
         
         // 下载图片
         const downloadImages = async (images) => {
-        if (!images || images.length === 0) {
-            showNotification('没有图片可下载', 'warning');
-            return;
-        }
-        
-        console.log('开始ZIP打包下载图片:', images);
-        showNotification(`开始打包下载 ${images.length} 张图片`, 'success');
-        
-        updateDownloadProgress(0, images.length, 'processing');
-        
-        try {
-                const result = await invokeIpc('download-images-as-zip', images);
-            
-            if (result.success) {
-                updateDownloadProgress(images.length, images.length, 'completed');
-                showNotification('ZIP文件下载完成！', 'success');
-            } else {
-                updateDownloadProgress(0, images.length, 'error');
-                showNotification('ZIP打包下载失败: ' + (result.error || '未知错误'), 'error');
+            if (!images || images.length === 0) {
+                showNotification('没有图片可下载', 'warning');
+                return;
             }
             
-        } catch (error) {
-            console.error('ZIP打包下载失败:', error);
-            updateDownloadProgress(0, images.length, 'error');
-            showNotification('ZIP打包下载失败: ' + error.message, 'error');
-        }
-    };
+            console.log('开始ZIP打包下载图片:', images);
+            showNotification(`开始打包下载 ${images.length} 张图片`, 'success');
+            
+            updateDownloadProgress(0, images.length, 'processing');
+            
+            try {
+                const result = await invokeIpc('download-images-as-zip', images);
+            
+                if (result.success) {
+                    updateDownloadProgress(images.length, images.length, 'completed');
+                    showNotification('ZIP文件下载完成！', 'success');
+                } else {
+                    updateDownloadProgress(0, images.length, 'error');
+                    showNotification('ZIP打包下载失败: ' + (result.error || '未知错误'), 'error');
+                }
+                
+            } catch (error) {
+                console.error('ZIP打包下载失败:', error);
+                updateDownloadProgress(0, images.length, 'error');
+                showNotification('ZIP打包下载失败: ' + error.message, 'error');
+            }
+        };
     
         // 下载商品图片
         const downloadProductImages = (productLink, productTitle) => {
-        console.log('下载商品图片:', productLink, productTitle);
-        
+            console.log('下载商品图片:', productLink, productTitle);
+            
             const targetGroup = productGroups.value.find(group => group.productTitle === productTitle);
         
-        if (targetGroup && targetGroup.images.length > 0) {
-            const selectedImageData = getSelectedImageDataByProduct(targetGroup.productId);
-            
-            if (selectedImageData.length > 0) {
-                downloadImages(selectedImageData);
+            if (targetGroup && targetGroup.images.length > 0) {
+                const selectedImageData = getSelectedImageDataByProduct(targetGroup.productId);
+                
+                if (selectedImageData.length > 0) {
+                    downloadImages(selectedImageData);
+                } else {
+                    const processedImages = targetGroup.images.map(image => ({
+                        url: image.url,
+                        index: image.index
+                    }));
+                    downloadImages(processedImages);
+                }
             } else {
-                const processedImages = targetGroup.images.map(image => ({
-                    url: image.url,
-                    index: image.index
-                }));
-                downloadImages(processedImages);
+                showNotification(`未找到 ${productTitle} 的图片`, 'warning');
             }
-        } else {
-            showNotification(`未找到 ${productTitle} 的图片`, 'warning');
-        }
-    };
+        };
 
         // 获取选中图片数据
         const getSelectedImageDataByProduct = (productId) => {
@@ -554,7 +645,7 @@ const app = createApp({
             modalImageUrl.value = imageUrl;
             modalTitle.value = `${imageTitle} - 图片${imageIndex + 1}`;
             showImageModal.value = true;
-        document.body.style.overflow = 'hidden';
+            document.body.style.overflow = 'hidden';
         };
         
         // 关闭图片模态框
@@ -662,11 +753,11 @@ const app = createApp({
         const getAllImages = () => {
             let globalIndex = 0;
             return productGroups.value.flatMap(group => 
-                    group.images.map(image => ({
-                        url: image.url,
-                        index: globalIndex++
-                    }))
-                );
+                group.images.map(image => ({
+                    url: image.url,
+                    index: globalIndex++
+                }))
+            );
         };
         
         // 拖拽处理函数
@@ -681,7 +772,7 @@ const app = createApp({
                 const file = files[0];
                 if (file.type.startsWith('image/')) {
                     selectedImage.value = file.path || file.name;
-            } else {
+                } else {
                     showNotification('请选择图片文件', 'warning');
                 }
             }
@@ -691,11 +782,9 @@ const app = createApp({
             // 状态
             isLoggedIn,
             isLoggingIn,
-            is1688LoggedIn,
-            is1688LoggingIn,
             currentPlatform,
             selectedImage,
-            skuId, // 新增：暴露 skuId
+            skuId,
             selectedImages,
             selectedImageCount,
             productGroups,
@@ -705,6 +794,13 @@ const app = createApp({
             modalTitle,
             crawlProgress,
             downloadProgress,
+            currentSearchMode,
+            isSearching, // 新增：搜索状态
+            
+            // 平台管理工具
+            getPlatformName,
+            getAllPlatforms,
+            getPlatformStatus,
             
             // 计算属性
             step1Class,
