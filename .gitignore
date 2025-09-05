@@ -41,3 +41,7 @@ plugins/*/build/
 
 # 测试文件
 tests/*
+
+#插件文件
+/plugins/
+/plugins/*
