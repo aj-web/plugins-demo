@@ -1,0 +1,29 @@
+{
+  "name": "demo_framework_plugin",
+  "version": "1.0.0",
+  "description": "使用前端框架（Vite+Vue）的演示插件",
+  "events": [
+    {
+      "id": "hello",
+      "class": "HelloService",
+      "method": "say",
+      "jsFile": "nodes/hello.js"
+    },
+    {
+      "id": "stop-processing",
+      "class": "Control",
+      "method": "stop",
+      "jsFile": "nodes/hello.js"
+    },
+    {
+      "id": "read-text",
+      "class": "FileService",
+      "method": "readText",
+      "jsFile": "nodes/read-text.js"
+    }
+  ],
+  "frontend": {
+    "devServerUrl": "http://127.0.0.1:5174",
+    "entry": "dist/index.html"
+  }
+} 
