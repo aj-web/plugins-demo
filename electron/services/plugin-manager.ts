@@ -166,7 +166,7 @@ export class PluginManager {
       const timeout = setTimeout(() => {
         console.error('[PluginManager] sendToPluginProcess timeout after 10 minutes')
         reject(new Error('Plugin process timeout'))
-      }, 600000)
+      }, 1200000)
 
       child.once('message', (response: any) => {
         console.log('[PluginManager] sendToPluginProcess received response:', response)

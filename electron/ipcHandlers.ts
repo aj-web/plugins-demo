@@ -105,7 +105,7 @@ export function setupIpcHandlers(): void {
   })
 
   // ZIP打包下载API
-  ipcMain.handle('download-images-as-zip', async (event, images: Array<{url: string, index: number}>) => {
+  ipcMain.handle('download-images-as-zip', async (event, images: Array<{url: string, index: number, platform?: string, productTitle?: string}>) => {
     console.log('[ipcHandlers] download-images-as-zip called with images count:', images.length)
     console.log('[ipcHandlers] download-images-as-zip images data:', images)
     
@@ -162,10 +162,18 @@ export function setupIpcHandlers(): void {
           // 下载图片
           const imageBuffer = await downloadImage(image.url)
           
-          // 使用选择顺序作为文件名（从1开始）
-          const fileName = `${i + 1}.jpg`
+          // 命名：{平台}-{简化标题}-{序号}.jpg
+          const platform = (image.platform || '').toString().trim() || '未知平台'
+          const rawTitle = (image.productTitle || '').toString().trim() || '未命名商品'
+          const sanitizedTitle = rawTitle
+            .replace(/[\\/:*?"<>|]/g, '')
+            .replace(/\s+/g, ' ')
+            .slice(0, 40)
+            .trim()
+          const seq = String(i + 1).padStart(Math.max(2, String(images.length).length), '0')
+          const fileName = `${platform}-${sanitizedTitle}-${seq}.jpg`
           
-          // 直接添加到ZIP根目录，不按商品分组
+          // 直接添加到ZIP根目录
           archive.append(imageBuffer, { name: fileName })
           
           processed++
