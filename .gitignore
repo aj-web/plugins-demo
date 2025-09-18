@@ -45,3 +45,4 @@ tests/*
 #插件文件
 /plugins/
 /plugins/*
+/chromium-1181/
