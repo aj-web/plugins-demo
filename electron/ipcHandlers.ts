@@ -84,8 +84,13 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('get-plugin-http-url', async (event, pluginName: string, subPath: string = 'dist/index.html') => {
     console.log('[ipcHandlers] get-plugin-http-url called with:', { pluginName, subPath })
+    
+    // 使用新的映射获取方法
+    const actualPluginName = pluginManager.getActualPluginName(pluginName)
+    console.log('[ipcHandlers] get-plugin-http-url actualPluginName:', actualPluginName)
+    
     const base = staticServer.getBaseUrl()
-    const url = `${base}/${pluginName}/${subPath}`
+    const url = `${base}/${actualPluginName}/${subPath}`
     console.log('[ipcHandlers] get-plugin-http-url result:', url)
     return url
   })

@@ -22,6 +22,7 @@ export interface PluginManifest {
 export class PluginManager {
   private pluginProcesses = new Map<string, any>()
   private manifestCache = new Map<string, PluginManifest>()
+  private displayNameToFolderMap = new Map<string, string>()
 
   async getManifest(pluginName: string): Promise<PluginManifest> {
     console.log('[PluginManager] getManifest called with pluginName:', pluginName)
@@ -31,7 +32,9 @@ export class PluginManager {
       return this.manifestCache.get(pluginName)!
     }
 
-    const manifestPath = pathManager.getPluginManifestPath(pluginName)
+    // 使用新的映射获取方法
+    const actualPluginName = this.getActualPluginName(pluginName)
+    const manifestPath = pathManager.getPluginManifestPath(actualPluginName)
     console.log('[PluginManager] getManifest manifestPath:', manifestPath)
     
     if (!fs.existsSync(manifestPath)) {
@@ -106,7 +109,11 @@ export class PluginManager {
   private async startPluginProcess(pluginName: string): Promise<any> {
     console.log('[PluginManager] startPluginProcess called with pluginName:', pluginName)
     
-    const entry = pathManager.getPluginHostPath(pluginName)
+    // 使用新的映射获取方法
+    const actualPluginName = this.getActualPluginName(pluginName)
+    console.log('[PluginManager] startPluginProcess actualPluginName:', actualPluginName)
+    
+    const entry = pathManager.getPluginHostPath(actualPluginName)
     console.log('[PluginManager] startPluginProcess entry path:', entry)
     
     if (!fs.existsSync(entry)) {
@@ -122,7 +129,7 @@ export class PluginManager {
       console.log('[PluginManager] startPluginProcess Found FFmpeg at:', ffmpegPath)
     }
 
-        // 设置 Chrome 路径环境变量
+    // 设置 Chrome 路径环境变量
     const chromePath = pathManager.getChromePath()
     if (chromePath) {
       env.CHROME_PATH = chromePath
@@ -186,10 +193,51 @@ export class PluginManager {
   }
 
   getAvailablePlugins(): Array<{ name: string; status: string }> {
-    return pathManager.getAvailablePlugins().map(pluginName => ({
-      name: pluginName,
-      status: 'ready'
-    }))
+    const pluginDirs = pathManager.getAvailablePlugins()
+    return pluginDirs.map(pluginName => {
+      let displayName = pluginName
+      
+      try {
+        const manifestPath = pathManager.getPluginManifestPath(pluginName)
+        if (fs.existsSync(manifestPath)) {
+          const manifestContent = fs.readFileSync(manifestPath, 'utf-8')
+          const manifest = JSON.parse(manifestContent)
+          if (manifest.name && typeof manifest.name === 'string') {
+            displayName = manifest.name
+            // 使用新的映射设置方法
+            this.setDisplayNameMapping(displayName, pluginName)
+          }
+        }
+      } catch (error) {
+        console.warn(`Failed to read manifest for plugin ${pluginName}:`, error)
+      }
+      
+      return {
+        name: displayName,
+        status: 'ready'
+      }
+    })
+  }
+
+  /**
+   * 设置显示名称到文件夹名的映射
+   * @param displayName 显示名称
+   * @param folderName 实际文件夹名
+   */
+  setDisplayNameMapping(displayName: string, folderName: string): void {
+    console.log('[PluginManager] setDisplayNameMapping:', { displayName, folderName })
+    this.displayNameToFolderMap.set(displayName, folderName)
+  }
+
+  /**
+   * 根据显示名称获取实际的文件夹名
+   * @param pluginName 显示名称或文件夹名
+   * @returns 实际的文件夹名
+   */
+  getActualPluginName(pluginName: string): string {
+    const actualName = this.displayNameToFolderMap.get(pluginName) || pluginName
+    console.log('[PluginManager] getActualPluginName:', { pluginName, actualName })
+    return actualName
   }
 
   cleanup(): void {
@@ -198,6 +246,7 @@ export class PluginManager {
       this.pluginProcesses.delete(pluginName)
     })
     this.manifestCache.clear()
+    this.displayNameToFolderMap.clear()
   }
 }
 

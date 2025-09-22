@@ -1,1 +1,59 @@
-"use strict";const l=require("electron");l.contextBridge.exposeInMainWorld("electronAPI",{getPluginsStatus:()=>(console.log("[preload] getPluginsStatus called"),l.ipcRenderer.invoke("get-plugins-status")),getPluginResourcePath:e=>(console.log("[preload] getPluginResourcePath called with pluginName:",e),l.ipcRenderer.invoke("get-plugin-resource-path",e)),getPluginHttpUrl:(e,o="dist/index.html")=>(console.log("[preload] getPluginHttpUrl called with:",{pluginName:e,subPath:o}),l.ipcRenderer.invoke("get-plugin-http-url",e,o)),invoke:(e,...o)=>(console.log("[preload] invoke called with:",e,o),l.ipcRenderer.invoke(e,...o)),checkFileExists:e=>(console.log("[preload] checkFileExists called with filePath:",e),l.ipcRenderer.invoke("check-file-exists",e)),selectFile:()=>(console.log("[preload] selectFile called"),l.ipcRenderer.invoke("select-file")),selectFolder:()=>(console.log("[preload] selectFolder called"),l.ipcRenderer.invoke("select-folder")),getPluginDirs:()=>(console.log("[preload] getPluginDirs called"),l.ipcRenderer.invoke("get-plugin-dirs")),startPluginProcess:e=>(console.log("[preload] startPluginProcess called with pluginName:",e),l.ipcRenderer.invoke("start-plugin-process",e)),triggerEvent:(e,o,r)=>(console.log("[preload] triggerEvent called with:",{pluginName:e,eventType:o,params:r}),l.ipcRenderer.invoke("trigger-event",e,o,r)),downloadImagesAsZip:e=>(console.log("[preload] downloadImagesAsZip called with images count:",e.length),l.ipcRenderer.invoke("download-images-as-zip",e)),onBusinessStopped:e=>{console.log("[preload] onBusinessStopped called"),l.ipcRenderer.on("business-stopped",e)}});
+"use strict";
+const electron = require("electron");
+electron.contextBridge.exposeInMainWorld("electronAPI", {
+  getPluginsStatus: () => {
+    console.log("[preload] getPluginsStatus called");
+    return electron.ipcRenderer.invoke("get-plugins-status");
+  },
+  getPluginResourcePath: (pluginName) => {
+    console.log("[preload] getPluginResourcePath called with pluginName:", pluginName);
+    return electron.ipcRenderer.invoke("get-plugin-resource-path", pluginName);
+  },
+  getPluginHttpUrl: (pluginName, subPath = "dist/index.html") => {
+    console.log("[preload] getPluginHttpUrl called with:", { pluginName, subPath });
+    return electron.ipcRenderer.invoke("get-plugin-http-url", pluginName, subPath);
+  },
+  // 通用invoke（受宿主白名单控制）
+  invoke: (channel, ...args) => {
+    console.log("[preload] invoke called with:", channel, args);
+    return electron.ipcRenderer.invoke(channel, ...args);
+  },
+  checkFileExists: (filePath) => {
+    console.log("[preload] checkFileExists called with filePath:", filePath);
+    return electron.ipcRenderer.invoke("check-file-exists", filePath);
+  },
+  selectFile: () => {
+    console.log("[preload] selectFile called");
+    return electron.ipcRenderer.invoke("select-file");
+  },
+  selectFolder: () => {
+    console.log("[preload] selectFolder called");
+    return electron.ipcRenderer.invoke("select-folder");
+  },
+  getPluginDirs: () => {
+    console.log("[preload] getPluginDirs called");
+    return electron.ipcRenderer.invoke("get-plugin-dirs");
+  },
+  startPluginProcess: (pluginName) => {
+    console.log("[preload] startPluginProcess called with pluginName:", pluginName);
+    return electron.ipcRenderer.invoke("start-plugin-process", pluginName);
+  },
+  triggerEvent: (pluginName, eventType, params) => {
+    console.log("[preload] triggerEvent called with:", { pluginName, eventType, params });
+    return electron.ipcRenderer.invoke("trigger-event", pluginName, eventType, params);
+  },
+  eventBus: {
+    trigger: (eventType, params, pluginName) => {
+      console.log("[preload] eventBus.trigger called with:", { eventType, params, pluginName });
+      return electron.ipcRenderer.invoke("trigger-event", pluginName, eventType, params);
+    }
+  },
+  downloadImagesAsZip: (images) => {
+    console.log("[preload] downloadImagesAsZip called with images count:", images.length);
+    return electron.ipcRenderer.invoke("download-images-as-zip", images);
+  },
+  onBusinessStopped: (callback) => {
+    console.log("[preload] onBusinessStopped called");
+    electron.ipcRenderer.on("business-stopped", callback);
+  }
+});

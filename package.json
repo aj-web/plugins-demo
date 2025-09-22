@@ -38,6 +38,7 @@
     "vue-tsc": "^1.8.0"
   },
   "dependencies": {
+    "@element-plus/icons-vue": "^2.3.1",
     "archiver": "^6.0.1",
     "element-plus": "^2.4.0",
     "extract-zip": "^2.0.1",
