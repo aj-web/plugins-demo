@@ -46,3 +46,4 @@ tests/*
 /plugins/
 /plugins/*
 /chromium-1181/
+/dist-electron/

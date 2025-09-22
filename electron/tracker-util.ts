@@ -2,6 +2,7 @@ import * as os from 'os'
 import { randomUUID } from 'crypto'
 import * as fs from 'fs'
 import * as path from 'path'
+import * as https from 'https'
 
 // 自定义错误类
 export class InvalidRegistryKeyError extends Error {
@@ -92,7 +93,6 @@ class TrackerUtil {
     }
 
     return new Promise((resolve, reject) => {
-      const https = require('https')
       const req = https.request(options, (res: any) => {
         let responseData = ''
 
