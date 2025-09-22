@@ -6,7 +6,6 @@ import path from 'path'
 import https from 'https'
 import http from 'http'
 import { pipeline } from 'stream/promises'
-import archiver from 'archiver'
 import { staticServer } from './static-server'
 import { configManager } from './config'
 
@@ -134,6 +133,7 @@ export function setupIpcHandlers(): void {
 
       // 创建ZIP文件
       const output = fs.createWriteStream(zipPath)
+      const archiver = require('archiver')
       const archive = archiver('zip', {
         zlib: { level: 9 } // 设置压缩级别
       })
