@@ -76,6 +76,10 @@
         "to": "ffmpeg.exe"
       },
       {
+        "from": "ffprobe.exe",
+        "to": "ffprobe.exe"
+      },
+      {
         "from": "chromium-1181",
         "to": "chromium-1181"
       }
