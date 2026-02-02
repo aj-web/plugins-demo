@@ -11,6 +11,7 @@
   },
   "ipcAllowlist": [
     "select-file",
+    "select-file-url",
     "select-folder",
     "get-plugin-dirs",
     "start-plugin-process",
@@ -20,6 +21,13 @@
     "check-file-exists",
     "download-images-as-zip",
     "get-plugins-status",
-    "get-ipc-allowlist"
+    "get-ipc-allowlist",
+    "open-folder",
+    "read-json-file",
+    "start-scheduled-task",
+    "stop-scheduled-task",
+    "list-scheduled-tasks",
+    "download-template",
+    "check-templates"
   ]
-} 
+}

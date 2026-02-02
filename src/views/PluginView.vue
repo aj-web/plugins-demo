@@ -111,7 +111,7 @@ const loadPlugin = async (pluginName: string) => {
     iframe.style.width = '100%'
     iframe.style.height = '100%'
     iframe.style.border = '0'
-    iframe.setAttribute('sandbox', 'allow-scripts allow-forms')
+    iframe.setAttribute('sandbox', 'allow-scripts allow-forms allow-same-origin')
 
     iframe.onload = () => {
       console.log('[PluginView] iframe loaded:', src)
