@@ -192,48 +192,6 @@ export function setupIpcHandlers(): void {
     }
   });
 
-  // 下载模板文件
-  ipcMain.handle('download-template', async (event, templateType: string) => {
-    console.log('[ipcHandlers] download-template called with templateType:', templateType);
-    try {
-      // 动态导入 TemplateDownloader
-      const templateDownloaderPath = path.join(__dirname, '../plugins/smart-short-drama/utils/template-downloader.js');
-      const { TemplateDownloader } = require(templateDownloaderPath);
-      const downloader = new TemplateDownloader();
-      
-      const result = await downloader.downloadTemplate(templateType);
-      console.log('[ipcHandlers] download-template result:', result);
-      return result;
-    } catch (error) {
-      console.error('[ipcHandlers] download-template error:', error);
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : 'Unknown error'
-      };
-    }
-  });
-
-  // 检查模板文件
-  ipcMain.handle('check-templates', async (event) => {
-    console.log('[ipcHandlers] check-templates called');
-    try {
-      // 动态导入 TemplateDownloader
-      const templateDownloaderPath = path.join(__dirname, '../plugins/smart-short-drama/utils/template-downloader.js');
-      const { TemplateDownloader } = require(templateDownloaderPath);
-      const downloader = new TemplateDownloader();
-      
-      const result = await downloader.checkTemplates();
-      console.log('[ipcHandlers] check-templates result:', result);
-      return result;
-    } catch (error) {
-      console.error('[ipcHandlers] check-templates error:', error);
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : 'Unknown error'
-      };
-    }
-  });
-
   ipcMain.handle('start-scheduled-task', async (event, config) => {
     console.log('[ipcHandlers] start-scheduled-task called with config:', config);
     try {
