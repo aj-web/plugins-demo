@@ -1,0 +1,23 @@
+{
+  "name": "smart-short-drama-plugin",
+  "version": "1.0.0",
+  "description": "短剧智造插件后端依赖",
+  "main": "plugin_host.js",
+  "scripts": {
+    "install-all": "npm install && cd frontend && npm install"
+  },
+  "dependencies": {
+    "playwright": "^1.40.0",
+    "jimp": "^0.22.10",
+    "xlsx": "^0.18.5",
+    "fluent-ffmpeg": "^2.1.3",
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "sharp": "^0.33.0",
+    "axios": "^1.6.0",
+    "unzipper": "^0.10.14"
+  },
+  "devDependencies": {},
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

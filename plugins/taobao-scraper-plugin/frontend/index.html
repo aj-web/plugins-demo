@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>素材获取</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="min-h-screen bg-gray-50">
+    <div id="app">
+      <!-- 任务失败弹窗 -->
+      <div v-if="failureDialog.visible" class="fixed inset-0 z-40 flex items-center justify-center bg-black bg-opacity-50">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 p-6">
+          <h2 class="text-xl font-bold text-red-600 mb-4">任务执行失败</h2>
+          <p class="text-sm text-gray-700 whitespace-pre-line mb-6">{{ failureDialog.message || '任务执行失败，请检查具体错误信息后重试。' }}</p>
+          <div class="flex justify-end">
+            <button @click="closeFailureDialog" class="px-6 py-2 bg-red-500 text-white rounded-lg font-semibold hover:bg-red-600 transition-colors shadow">我知道了</button>
+          </div>
+        </div>
+      </div>
+      <!-- 通知 -->
+      <div class="fixed top-6 right-6 space-y-3 z-50">
+        <div
+          v-for="notice in notifications"
+          :key="notice.id"
+          class="px-4 py-3 rounded-lg shadow-lg text-white flex items-center justify-between space-x-4 min-w-[260px]"
+          :class="{
+            'bg-blue-500': notice.type === 'info',
+            'bg-green-500': notice.type === 'success',
+            'bg-yellow-500': notice.type === 'warning',
+            'bg-red-500': notice.type === 'error'
+          }"
+        >
+          <span class="text-sm font-medium">{{ notice.message }}</span>
+          <button class="text-white text-lg leading-none" @click="dismissNotification(notice.id)">×</button>
+        </div>
+      </div>
+
+      <!-- 顶部标题栏 -->
+      <div class="bg-white border-b">
+        <div class="max-w-7xl mx-auto px-6 py-4">
+          <h1 class="text-2xl font-bold text-gray-800">素材获取</h1>
+        </div>
+      </div>
+
+      <!-- 顶部平台导航栏 -->
+      <div class="bg-gradient-to-r from-blue-600 to-blue-500 shadow-lg">
+        <div class="max-w-7xl mx-auto px-6">
+          <div class="flex items-center h-20">
+            <div class="flex items-center space-x-2">
+              <button
+                @click="handleSwitchTab('tasks')"
+                class="px-6 py-3 rounded-lg font-bold text-base transition-all transform"
+                :class="activeTab === 'tasks'
+                  ? 'bg-white text-blue-600 shadow-xl scale-105'
+                  : 'text-white hover:bg-blue-400 hover:scale-105'"
+              >
+                任务列表
+              </button>
+              <button
+                v-for="platform in platforms"
+                :key="platform.key"
+                @click="handleSwitchTab(platform.key)"
+                class="px-6 py-3 rounded-lg font-bold text-base transition-all transform"
+                :class="activeTab === platform.key
+                  ? 'bg-white text-blue-600 shadow-xl scale-105'
+                  : 'text-white hover:bg-blue-400 hover:scale-105'"
+              >
+                {{ platform.name }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 主内容区域 -->
+      <div class="max-w-7xl mx-auto px-6 py-8">
+        <!-- 任务列表 / 任务详情 -->
+        <template v-if="activeTab === 'tasks'">
+          <!-- 任务详情页 -->
+          <div v-if="viewingTask" class="flex gap-6">
+            <!-- 左侧任务详情 -->
+            <div class="flex-1">
+              <div class="bg-white rounded-xl shadow-sm">
+                <div class="p-6 border-b flex items-center justify-between">
+                  <div>
+                    <button @click="handleBackToTaskList" class="text-blue-600 hover:text-blue-700 font-medium mb-2 flex items-center">← 返回任务列表</button>
+                    <h2 class="text-2xl font-bold text-gray-800">{{ viewingTask.name }}</h2>
+                    <div class="flex items-center space-x-4 mt-2 text-sm text-gray-600">
+                      <span>平台: {{ viewingTask.platform }}</span>
+                      <span>搜索方式: {{ viewingTask.searchType }}</span>
+                      <span v-if="totalMediaInTask > 0"> 共 {{ totalMediaInTask }} 个素材 </span>
+                      <span v-if="viewingTask.items && viewingTask.items.length > 0">
+                        <template v-if="viewingTask.status === 'failed'"> (成功: {{ successfulItems.length }}, 失败: {{ failedOrPendingItems.length }}) </template>
+                        <template v-else> (成功: {{ successfulItems.length }}) </template>
+                      </span>
+                    </div>
+                  </div>
+                  <div v-if="totalMediaInTask > 0" class="flex items-center space-x-3">
+                    <button @click="selectAllMedia" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium transition-colors">
+                      {{ selectedMedia.length === totalMediaInTask ? '取消全选' : '全选' }}
+                    </button>
+                  </div>
+                </div>
+
+                <!-- 任务详情内容：统一使用 items[] 模型 -->
+                <div class="p-6 space-y-8">
+                  <!-- 1. 展示执行失败的 items（只在任务状态为 failed 时显示，包含 failed 和 pending） -->
+                  <template v-if="viewingTask.status === 'failed' && failedOrPendingItems.length > 0">
+                    <div class="mb-6">
+                      <h3 class="text-lg font-bold text-red-800 mb-4 flex items-center">
+                        <span class="w-2 h-2 rounded-full bg-red-500 mr-2"></span>
+                        执行失败 ({{ failedOrPendingItems.length }} 个)
+                      </h3>
+                    </div>
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-6 mb-6">
+                      <div class="space-y-3">
+                        <div v-for="(item, index) in failedOrPendingItems" :key="`failed-${index}`" class="bg-white rounded-lg p-4 border border-red-200">
+                          <div class="flex items-center space-x-3 mb-2">
+                            <span class="inline-block bg-red-100 text-red-700 px-3 py-1 rounded-full text-sm font-bold"> {{ getSearchTypeLabel(item.type) }} </span>
+                            <!-- 图片类型显示图标 -->
+                            <template v-if="item.type === 'image'">
+                              <div class="flex items-center space-x-2">
+                                <div class="w-10 h-10 rounded border-2 border-red-300 bg-gray-50 flex items-center justify-center text-gray-400 text-xs">图</div>
+                                <span class="font-mono text-sm text-gray-800">{{ item.input }}</span>
+                              </div>
+                            </template>
+                            <!-- 关键词和SKU类型直接显示文本 -->
+                            <template v-else>
+                              <span class="font-mono text-sm text-gray-800">{{ item.input }}</span>
+                            </template>
+                            <!-- 如果是 pending 状态，显示待执行标签 -->
+                            <span v-if="item.status === 'pending'" class="ml-2 text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">待执行</span>
+                          </div>
+                          <!-- 只有 failed 状态才显示错误信息 -->
+                          <div v-if="item.status === 'failed' && item.error" class="mt-2 text-sm text-red-600 bg-red-50 px-3 py-2 rounded">
+                            <span class="font-semibold">错误信息：</span>{{ item.error }}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+
+                  <!-- 2. 继续执行按钮 -->
+                  <div v-if="viewingTask.status === 'failed' && failedOrPendingItems.length > 0" class="flex justify-end pt-4 border-t">
+                    <button @click="handleResumeTask(viewingTask.id)" class="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 font-bold transition-colors shadow-md">
+                      继续执行 (从失败处继续)
+                    </button>
+                  </div>
+
+                  <!-- 3. 展示成功的 items 的结果 -->
+                  <template v-if="successfulItems.length > 0">
+                    <div class="mb-6">
+                      <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                        <span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span>
+                        已成功执行 ({{ successfulItems.length }} 个)
+                      </h3>
+                    </div>
+                    <div v-for="(item, index) in successfulItems" :key="`success-${index}`" class="border rounded-lg overflow-hidden mb-6">
+                      <div class="bg-gray-50 px-6 py-4 border-b flex items-center justify-between">
+                        <div class="flex items-center space-x-3">
+                          <div class="bg-green-500 text-white px-3 py-1 rounded-full text-sm font-bold">{{ getSearchTypeLabel(item.type) }}</div>
+                          <h3 class="text-lg font-bold text-gray-800">{{ item.input }}</h3>
+                          <span v-if="item.result && item.result.mediaData" class="text-sm text-gray-500"> ({{ item.result.mediaData.length }} 个素材) </span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                          <span v-if="item.result && item.result.mediaData" class="text-sm text-gray-600">
+                            已选择 {{ item.result.mediaData.filter(media => selectedMedia.includes(media.id)).length }} 个
+                          </span>
+                          <button
+                            v-if="item.result && item.result.mediaData"
+                            @click="toggleSelectAllInItem(item)"
+                            class="px-3 py-1 bg-white border border-gray-300 text-gray-700 rounded hover:bg-gray-50 text-sm font-medium transition-colors"
+                          >
+                            {{ item.result.mediaData.every(media => selectedMedia.includes(media.id)) ? '取消全选' : '全选' }}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div v-if="item.result && item.result.mediaData && item.result.mediaData.length > 0" class="p-6">
+                        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                          <div
+                            v-for="media in item.result.mediaData"
+                            :key="media.id"
+                            @click="toggleMediaSelection(media.id)"
+                            class="relative group cursor-pointer rounded-lg overflow-hidden transition-all"
+                            :class="selectedMedia.includes(media.id)
+                              ? 'ring-4 ring-blue-500 shadow-lg'
+                              : 'hover:shadow-lg'"
+                          >
+                            <template v-if="media.type === 'video'">
+                              <div class="relative" @click.stop>
+                                <video :src="media.url" :poster="media.coverUrl || media.url" controls class="w-full h-48 object-cover bg-black" @click.stop @mousedown.stop @mouseup.stop></video>
+                                <div class="absolute top-2 left-2 bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded" @click.stop>视频</div>
+                              </div>
+                            </template>
+                            <template v-else>
+                              <img :src="media.url" :alt="media.name" class="w-full h-48 object-cover" />
+                            </template>
+                            <div
+                              class="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center transition-all"
+                              style="pointer-events: none"
+                              :class="selectedMedia.includes(media.id)
+                                ? 'bg-blue-500'
+                                : 'bg-white bg-opacity-70 group-hover:bg-opacity-100'"
+                            >
+                              <span v-if="selectedMedia.includes(media.id)" class="text-white text-xs"> ✓ </span>
+                            </div>
+                            <div
+                              class="absolute inset-0 transition-all pointer-events-none"
+                              :class="selectedMedia.includes(media.id)
+                                ? 'bg-blue-500 bg-opacity-20'
+                                : 'bg-black bg-opacity-0 group-hover:bg-opacity-10'"
+                            ></div>
+                            <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-2 pointer-events-none">
+                              <p class="text-white text-xs truncate">{{ media.name }}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+
+                  <!-- 4. 空状态 -->
+                  <div v-if="successfulItems.length === 0 && (viewingTask.status === 'failed' ? failedOrPendingItems.length === 0 : true)" class="text-center py-20 text-gray-400">
+                    <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center text-gray-400">图</div>
+                    <p>暂无任务数据</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 右侧选中素材栏 -->
+            <div v-if="viewingTask.status !== 'failed'" class="w-[30%]">
+              <div class="bg-white rounded-xl shadow-sm sticky top-6">
+                <div class="p-6 border-b">
+                  <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-lg font-bold text-gray-800">已选素材</h3>
+                    <span class="text-sm text-gray-500"> ({{ selectedMedia.length }}) </span>
+                  </div>
+                  <button
+                    @click="handleDownload"
+                    class="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 font-bold transition-colors shadow-md"
+                  >
+                    <span>打包下载</span>
+                  </button>
+                </div>
+
+                <div class="p-4 max-h-[calc(100vh-250px)] overflow-y-auto">
+                  <template v-if="getSelectedMediaByCategory().length > 0">
+                    <div class="space-y-6">
+                      <div v-for="(category, catIndex) in getSelectedMediaByCategory()" :key="catIndex" class="border rounded-lg overflow-hidden">
+                        <div class="bg-gray-50 px-3 py-2 border-b">
+                          <div class="flex items-center space-x-2">
+                            <span class="inline-block bg-blue-500 text-white px-2 py-0.5 rounded text-xs font-bold"> {{ getSearchTypeLabel(category.type) }} </span>
+                            <span class="text-sm font-semibold text-gray-700 truncate"> {{ category.value }} </span>
+                            <span class="text-xs text-gray-500"> ({{ category.media.length }}) </span>
+                          </div>
+                        </div>
+                        <div class="p-3 space-y-2">
+                          <div
+                            v-for="media in category.media"
+                            :key="media.id"
+                            draggable="true"
+                            @dragstart="handleDragStart($event, media.id)"
+                            @dragover.prevent="handleDragOver"
+                            @drop="handleDrop($event, media.id)"
+                            class="relative group rounded-lg overflow-hidden cursor-move transition-all"
+                            :class="draggedMedia === media.id ? 'opacity-50' : ''"
+                          >
+                            <template v-if="media.type === 'video'">
+                              <video :src="media.url" :poster="media.coverUrl || media.url" controls class="w-full h-32 object-cover rounded-lg bg-black"></video>
+                              <div class="absolute top-2 left-2 bg-black bg-opacity-70 text-white text-xs px-2 py-0.5 rounded">视频</div>
+                            </template>
+                            <template v-else>
+                              <img :src="media.url" :alt="media.name" class="w-full h-32 object-cover rounded-lg" />
+                            </template>
+                            <button
+                              @click.stop="toggleMediaSelection(media.id)"
+                              class="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg hover:bg-red-600"
+                            >
+                              ×
+                            </button>
+                            <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-2">
+                              <p class="text-white text-xs truncate">{{ media.name }}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+                  <div v-else class="text-center py-12 text-gray-400">
+                    <div class="w-12 h-12 mx-auto mb-3 rounded-full bg-gray-100 flex items-center justify-center text-gray-400">图</div>
+                    <p class="text-sm">暂未选择素材</p>
+                    <p class="text-xs mt-1">点击左侧素材进行选择</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 任务列表页 -->
+          <div v-else class="bg-white rounded-xl shadow-sm">
+            <div class="p-6 border-b">
+              <h2 class="text-2xl font-bold text-gray-800">任务列表</h2>
+              <p class="text-gray-500 mt-1">管理您的所有素材搜索任务</p>
+            </div>
+
+            <div class="overflow-x-auto">
+              <table class="w-full">
+                <thead class="bg-gray-50 border-b">
+                  <tr>
+                    <th class="px-6 py-4 text-center text-sm font-semibold text-gray-600">任务名</th>
+                    <th class="px-6 py-4 text-center text-sm font-semibold text-gray-600">平台</th>
+                    <th class="px-6 py-4 text-center text-sm font-semibold text-gray-600">搜索方式</th>
+                    <th class="px-6 py-4 text-center text-sm font-semibold text-gray-600">创建时间</th>
+                    <th class="px-6 py-4 text-center text-sm font-semibold text-gray-600">数量</th>
+                    <th class="px-6 py-4 text-center text-sm font-semibold text-gray-600">状态</th>
+                    <th class="px-6 py-4 text-center text-sm font-semibold text-gray-600">操作</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y">
+                  <tr v-for="task in tasks" :key="task.id" class="hover:bg-gray-50 transition-colors">
+                    <td class="px-6 py-4 font-medium text-gray-800 text-center">{{ task.name }}</td>
+                    <td class="px-6 py-4 text-gray-600 text-center">{{ task.platform }}</td>
+                    <td class="px-6 py-4 text-gray-600 text-center">{{ task.searchType }}</td>
+                    <td class="px-6 py-4 text-gray-500 text-sm text-center">{{ task.createdAt }}</td>
+                    <td class="px-6 py-4 text-gray-600 font-medium text-center">{{ task.count }}</td>
+                    <td class="px-6 py-4 text-center">
+                      <span class="inline-flex items-center space-x-1 px-3 py-1 rounded-full text-sm font-medium" :class="getStatusConfig(task.status).color">
+                        <span class="w-2 h-2 rounded-full bg-current"></span>
+                        <span>{{ getStatusConfig(task.status).text }}</span>
+                      </span>
+                    </td>
+                    <td class="px-6 py-4">
+                      <div class="flex items-center justify-center space-x-3">
+                        <button @click="handleViewTask(task)" class="text-blue-600 hover:text-blue-700 font-medium">查看详情</button>
+                        <button v-if="task.status === 'failed' && hasFailedOrPendingItems(task)" @click="handleResumeTask(task.id)" class="text-blue-600 hover:text-blue-700 font-medium">
+                          继续执行
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </template>
+
+        <!-- 平台搜索页面 -->
+        <template v-else>
+          <div class="space-y-6">
+            <div class="bg-white rounded-xl shadow-sm p-8">
+              <div class="flex items-center justify-between mb-8">
+                <div>
+                  <h2 class="text-2xl font-bold text-gray-800">{{ currentPlatformName }}素材搜索</h2>
+                </div>
+                <button
+                  @click="handleLogin"
+                  :disabled="isLoggingIn"
+                  class="flex items-center space-x-2 px-5 py-3 rounded-lg font-bold transition-all shadow-md disabled:opacity-60 disabled:cursor-not-allowed"
+                  :class="isLoggedIn
+                     ? 'bg-green-500 text-white hover:bg-green-600'
+                     : 'bg-blue-500 text-white hover:bg-blue-600'"
+                >
+                  <span>
+                    <template v-if="isLoggedIn"> {{ `${currentPlatformName}已登录` }} </template>
+                    <template v-else-if="isLoggingIn"> {{ `正在登录${currentPlatformName}...` }} </template>
+                    <template v-else> {{ `登录${currentPlatformName}` }} </template>
+                  </span>
+                </button>
+              </div>
+
+              <div class="flex space-x-4 mb-8">
+                <button
+                  v-if="currentPlatformSupports('关键词')"
+                  @click="searchMode = 'keyword'"
+                  class="flex items-center space-x-2 px-6 py-3 rounded-lg font-semibold transition-all"
+                  :class="searchMode === 'keyword'
+                    ? 'bg-blue-500 text-white shadow-lg'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+                >
+                  <span>关键词搜索</span>
+                </button>
+                <button
+                  v-if="currentPlatformSupports('SKU')"
+                  @click="searchMode = 'sku'"
+                  class="flex items-center space-x-2 px-6 py-3 rounded-lg font-semibold transition-all"
+                  :class="searchMode === 'sku'
+                    ? 'bg-blue-500 text-white shadow-lg'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+                >
+                  <span>SKU搜索</span>
+                </button>
+                <button
+                  v-if="currentPlatformSupports('图片')"
+                  @click="searchMode = 'image'"
+                  class="flex items-center space-x-2 px-6 py-3 rounded-lg font-semibold transition-all"
+                  :class="searchMode === 'image'
+                    ? 'bg-blue-500 text-white shadow-lg'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+                >
+                  <span>图片搜索</span>
+                </button>
+              </div>
+
+              <!-- 平台筛选 -->
+              <div v-if="currentFilterConfig.length" class="mb-6 space-y-4">
+                <div v-for="filter in currentFilterConfig" :key="filter.key">
+                  <p class="text-xs text-gray-500 mb-2">{{ filter.label }}</p>
+                  <div class="flex items-center gap-3 flex-wrap">
+                    <button
+                      v-for="option in filter.options"
+                      :key="option.value"
+                      @click="updatePlatformFilter(filter.key, option.value)"
+                      class="px-4 py-2 rounded-full text-sm font-medium transition-all"
+                      :class="currentFilters[filter.key] === option.value
+                        ? 'bg-blue-500 text-white shadow'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+                    >
+                      {{ option.label }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 任务名称 -->
+              <div class="mb-6">
+                <label class="block text-sm font-semibold text-gray-700 mb-2"> 任务名称 <span class="text-red-500">*</span> </label>
+                <input
+                  type="text"
+                  v-model="taskForm.name"
+                  placeholder="例如: 冬季羽绒服素材收集"
+                  class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                />
+              </div>
+
+              <!-- 关键词搜索 -->
+              <div v-if="searchMode === 'keyword'" class="mb-6">
+                <label class="block text-sm font-semibold text-gray-700 mb-2"> 批量输入关键词 </label>
+                <textarea
+                  v-model="taskForm.keywords"
+                  rows="8"
+                  class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none"
+                  placeholder="输入关键词，多个关键词请用换行分隔，例如:&#10;羽绒服女款&#10;冬季外套&#10;保暖大衣"
+                ></textarea>
+                <p class="text-sm text-gray-500 mt-2">每行一个关键词，支持批量输入</p>
+              </div>
+
+              <!-- SKU 搜索 -->
+              <div v-if="searchMode === 'sku'" class="mb-6">
+                <label class="block text-sm font-semibold text-gray-700 mb-2"> 批量输入 SKU 编号 </label>
+                <textarea
+                  v-model="taskForm.skus"
+                  rows="8"
+                  class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none"
+                  placeholder="输入SKU编号，多个SKU请用换行分隔"
+                ></textarea>
+                <p class="text-sm text-gray-500 mt-2">每行一个 SKU 编号，支持批量输入</p>
+              </div>
+
+              <!-- 图片搜索 -->
+              <div v-if="searchMode === 'image'" class="mb-6">
+                <label class="block text-sm font-semibold text-gray-700 mb-2"> 批量上传图片 </label>
+                <div class="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center hover:border-blue-400 transition-colors cursor-pointer bg-gray-50 mb-4" @click="handleImageUpload">
+                  <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 text-2xl">⬆</div>
+                  <p class="text-gray-600 font-medium mb-2 text-lg">点击选择本地图片</p>
+                  <p class="text-sm text-gray-500">单次选择一张，多次点击可添加多张</p>
+                </div>
+
+                <div v-if="taskForm.imageFiles.length > 0">
+                  <p class="text-sm font-semibold text-gray-700 mb-3">已选择 {{ taskForm.imageFiles.length }} 张图片</p>
+                  <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
+                    <div v-for="image in taskForm.imageFiles" :key="image.id" class="relative group">
+                      <img :src="image.preview" :alt="image.name" class="w-full h-24 object-cover rounded-lg border-2 border-gray-200" />
+                      <button
+                        @click="removeImage(image.id)"
+                        class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg hover:bg-red-600"
+                      >
+                        ×
+                      </button>
+                      <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs p-1 rounded-b-lg truncate">{{ image.name }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 操作按钮 -->
+              <div class="flex space-x-4 pt-4">
+                <button @click="handleCreateTask" class="flex-1 bg-blue-500 text-white px-8 py-4 rounded-lg font-bold text-lg hover:bg-blue-600 transition-colors shadow-lg hover:shadow-xl">
+                  创建搜索任务
+                </button>
+                <button @click="resetTaskForm" class="px-8 py-4 border-2 border-gray-300 text-gray-600 rounded-lg font-bold hover:bg-gray-50 transition-colors">重置</button>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script type="module" src="main.js"></script>
+  </body>
+</html>

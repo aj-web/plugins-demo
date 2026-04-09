@@ -1,0 +1,35 @@
+{
+  "gpu": {
+    "enabled": true,
+    "preferredType": "auto",
+    "fallbackToCPU": true,
+    "description": "GPU 加速配置。preferredType 可选值: auto, nvidia, intel, amd, cpu"
+  },
+  "encoding": {
+    "nvidia": {
+      "preset": "p4",
+      "cq": 23,
+      "description": "NVIDIA NVENC 编码器设置。preset: p1-p7 (p1最快但质量最低, p7最慢但质量最高), cq: 0-51 (越低质量越好)"
+    },
+    "intel": {
+      "preset": "medium",
+      "globalQuality": 23,
+      "description": "Intel Quick Sync 编码器设置。preset: veryfast, faster, fast, medium, slow, slower, veryslow"
+    },
+    "amd": {
+      "quality": "balanced",
+      "qp": 23,
+      "description": "AMD AMF 编码器设置。quality: speed, balanced, quality"
+    },
+    "cpu": {
+      "preset": "medium",
+      "crf": 23,
+      "description": "CPU (libx264) 编码器设置。preset: ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow"
+    }
+  },
+  "performance": {
+    "detectTimeoutMs": 3000,
+    "description": "性能相关设置。detectTimeoutMs: GPU 检测超时时间（毫秒）"
+  }
+}
+

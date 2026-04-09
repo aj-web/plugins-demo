@@ -43,7 +43,5 @@ plugins/*/build/
 tests/*
 
 #插件文件
-/plugins/
-/plugins/*
 /chromium-1181/
 /dist-electron/*

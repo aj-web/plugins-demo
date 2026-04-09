@@ -1,0 +1,95 @@
+{
+  "name": "商品好评图获取",
+  "version": "1.0.0",
+  "description": "专业的淘宝商品好评图片爬取插件，支持图片搜索、商品详情页爬取和批量下载",
+  "events": [
+    {
+      "id": "taobao-login",
+      "class": "TaobaoLoginNode",
+      "method": "startLogin",
+      "jsFile": "nodes/taobao-login.js"
+    },
+    {
+      "id": "taobao-login-check",
+      "class": "TaobaoLoginNode",
+      "method": "checkLoginStatus",
+      "jsFile": "nodes/taobao-login.js"
+    },
+    {
+      "id": "image-search",
+      "class": "ImageSearchNode",
+      "method": "runSearch",
+      "jsFile": "nodes/image-search.js"
+    },
+    {
+      "id": "keyword-search",
+      "class": "KeywordSearchNode",
+      "method": "keyWordSearch",
+      "jsFile": "nodes/taobao-key-word-search.js"
+    },
+    {
+      "id": "1688-login",
+      "class": "Login1688Node",
+      "method": "startLogin",
+      "jsFile": "nodes/1688-login.js"
+    },
+    {
+      "id": "1688-login-check",
+      "class": "Login1688Node",
+      "method": "checkLoginStatus",
+      "jsFile": "nodes/1688-login.js"
+    },
+    {
+      "id": "1688-image-search",
+      "class": "Search1688Node",
+      "method": "startSearch",
+      "jsFile": "nodes/1688-search.js"
+    },
+    {
+      "id": "jd-login",
+      "class": "JdLoginNode",
+      "method": "startLogin",
+      "jsFile": "nodes/jd-login.js"
+    },
+    {
+      "id": "jd-login-check",
+      "class": "JdLoginNode",
+      "method": "checkLoginStatus",
+      "jsFile": "nodes/jd-login.js"
+    },
+    {
+      "id": "jd-keyword-search",
+      "class": "JdSearchNode",
+      "method": "startKeywordSearch",
+      "jsFile": "nodes/jd-search.js"
+    },
+    {
+      "id": "jd-sku-search",
+      "class": "JdSearchNode",
+      "method": "startSkuSearch",
+      "jsFile": "nodes/jd-search.js"
+    },
+    {
+      "id": "xhs-login",
+      "class": "XhsLoginNode",
+      "method": "startLogin",
+      "jsFile": "nodes/xhs-login.js"
+    },
+    {
+      "id": "xhs-login-check",
+      "class": "XhsLoginNode",
+      "method": "checkLoginStatus",
+      "jsFile": "nodes/xhs-login.js"
+    },
+    {
+      "id": "xhs-keyword-search",
+      "class": "XhsSearchNode",
+      "method": "startKeywordSearch",
+      "jsFile": "nodes/xhs-search.js"
+    }
+  ],
+  "frontend": {
+    "devServerUrl": "http://127.0.0.1:5175",
+    "entry": "dist/index.html"
+  }
+}

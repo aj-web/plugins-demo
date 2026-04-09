@@ -1,0 +1,53 @@
+{
+  "name": "短剧分销",
+  "version": "1.0.0",
+  "description": "ADX短剧视频批量下载",
+  "events": [
+    {
+      "id": "adx-login",
+      "class": "ADXLoginNode",
+      "method": "ADXlogin",
+      "jsFile": "nodes/adx-login.js"
+    },
+    {
+      "id": "adx-login-check",
+      "class": "ADXLoginNode",
+      "method": "checkLoginStatus",
+      "jsFile": "nodes/adx-login.js"
+    },
+    {
+      "id": "adx-search",
+      "class": "ADXSearchNode",
+      "method": "startSearch",
+      "jsFile": "nodes/adx-search.js"
+    },
+    {
+      "id": "adx-read-excel",
+      "class": "ADXSearchNode",
+      "method": "readExcel",
+      "jsFile": "nodes/adx-search.js"
+    },
+    {
+      "id": "adx-create-folders",
+      "class": "ADXSearchNode",
+      "method": "createFilebyAdxExcle",
+      "jsFile": "nodes/adx-search.js"
+    },
+    {
+      "id": "adx-start-processing",
+      "class": "ADXSearchNode",
+      "method": "startProcessing",
+      "jsFile": "nodes/adx-search.js"
+    },
+    {
+      "id": "create-template-folders",
+      "class": "ADXSearchNode",
+      "method": "createTemplateFolders",
+      "jsFile": "nodes/adx-search.js"
+    }
+  ],
+  "frontend": {
+    "devServerUrl": "http://127.0.0.1:5175",
+    "entry": "dist/index.html"
+  }
+}

@@ -1,0 +1,101 @@
+{
+  "name": "短剧智造",
+  "version": "1.0.0",
+  "description": "短剧智造客户端 - 支持爆款扒产、复刻、混剪等功能",
+  "events": [
+    {
+      "id": "adx-login",
+      "class": "ADXLoginNode",
+      "method": "ADXlogin",
+      "jsFile": "nodes/adx-login.js"
+    },
+    {
+      "id": "adx-login-check",
+      "class": "ADXLoginNode",
+      "method": "checkLoginStatus",
+      "jsFile": "nodes/adx-login.js"
+    },
+    {
+      "id": "adx-start-processing",
+      "class": "ADXSearchNode",
+      "method": "startProcessing",
+      "jsFile": "nodes/adx-search.js"
+    },
+    {
+      "id": "adx-create-folders",
+      "class": "ADXSearchNode",
+      "method": "createFilebyAdxExcle",
+      "jsFile": "nodes/adx-search.js"
+    },
+    {
+      "id": "adx-auto-start",
+      "class": "ADXSearchNode",
+      "method": "autoStartProcessing",
+      "jsFile": "nodes/adx-search.js"
+    },
+    {
+      "id": "get-tasks",
+      "class": "ADXSearchNode",
+      "method": "getTasks",
+      "jsFile": "nodes/adx-search.js"
+    },
+    {
+      "id": "usergrowth-login",
+      "class": "UserGrowthLoginNode",
+      "method": "UserGrowthLogin",
+      "jsFile": "nodes/usergrowth-login.js"
+    },
+    {
+      "id": "usergrowth-login-check",
+      "class": "UserGrowthLoginNode",
+      "method": "checkLoginStatus",
+      "jsFile": "nodes/usergrowth-login.js"
+    },
+    {
+      "id": "replication-auto-start",
+      "class": "UserGrowthBatchFragmentsNode",
+      "method": "autoStartProcessing",
+      "jsFile": "nodes/bytegrowth-batch-frag.js"
+    },
+    {
+      "id": "replication-get-tasks",
+      "class": "UserGrowthBatchFragmentsNode",
+      "method": "getTasks",
+      "jsFile": "nodes/bytegrowth-batch-frag.js"
+    },
+    {
+      "id": "mix-edit-auto-start",
+      "class": "MixEditNode",
+      "method": "autoStartProcessing",
+      "jsFile": "nodes/mix-edit.js"
+    },
+    {
+      "id": "highlight-mix-edit-auto-start",
+      "class": "HighlightMixEditNode",
+      "method": "autoStartProcessing",
+      "jsFile": "nodes/hightlight-mix-edit.js"
+    },
+    {
+      "id": "highlight-parse-and-download",
+      "class": "HighlightMixEditNode",
+      "method": "parseAndDownloadOnly",
+      "jsFile": "nodes/hightlight-mix-edit.js"
+    },
+    {
+      "id": "highlight-mix-edit-get-tasks",
+      "class": "HighlightMixEditNode",
+      "method": "getTasks",
+      "jsFile": "nodes/hightlight-mix-edit.js"
+    },
+    {
+      "id": "copy-template-file",
+      "class": "TemplateDownloader",
+      "method": "copyFile",
+      "jsFile": "utils/template-downloader.js"
+    }
+  ],
+  "frontend": {
+    "devServerUrl": "http://127.0.0.1:5176",
+    "entry": "dist/index.html"
+  }
+}
