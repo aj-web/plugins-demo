@@ -26,7 +26,7 @@ class UserGrowthLoginNode {
    * @returns {Promise<Object>} 登录结果
    */
   async UserGrowthLogin() {
-    const loginUrl = 'https://usergrowth.com.cn/aigc/insight/business/playlet';
+    const loginUrl = 'https://usergrowth.com.cn/open/customer';
 
     console.log('[UserGrowthLogin] 开始登录流程...');
 

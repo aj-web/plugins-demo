@@ -14,7 +14,7 @@ class BrowserManager {
     this.browser = await playwright_1.chromium.launch({
       headless: false,
       executablePath: chromePath,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas', '--no-first-run', '--no-zygote', '--disable-gpu', '--start-maximized']
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas', '--no-first-run', '--no-zygote', '--disable-gpu', '--start-maximized', '--proxy-bypass-list=*']
     });
     return this.browser;
   }

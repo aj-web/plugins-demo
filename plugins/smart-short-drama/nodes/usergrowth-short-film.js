@@ -24,7 +24,7 @@ class UserGrowthShortFilmNode {
 
     // UserGrowth URLs
     this.baseUrl = 'https://usergrowth.com.cn/';
-    this.targetUrl = 'https://usergrowth.com.cn/aigc/insight/business/playlet';
+    this.targetUrl = 'https://usergrowth.com.cn/open/customer';
 
     console.log('[UserGrowthShortFilm] 节点已初始化');
   }

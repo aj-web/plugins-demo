@@ -50,13 +50,14 @@ class VideoMixer {
           outputOptions: [
             '-c:v h264_nvenc',
             '-preset p4',
-            '-tune hq',            // 高质量模式，提高稳定性
-            '-rc vbr',             // 可变比特率
-            '-cq 23',              // 质量控制 (0-51, 越低质量越好)
-            '-b:v 0',              // 让 cq 控制质量
-            '-gpu 0',              // 使用第一个 GPU
-            '-bf 3',                // B帧数量
-            '-rc-lookahead 32'     // 前瞻帧数，提高稳定性
+            '-tune hq',
+            '-rc vbr',
+            '-b:v 3000k',
+            '-maxrate 3000k',
+            '-bufsize 6000k',
+            '-gpu 0',
+            '-bf 3',
+            '-rc-lookahead 32'
           ]
         };
         console.log('[VideoMixer] 检测到 NVIDIA GPU 加速支持 (NVENC)');
@@ -73,7 +74,9 @@ class VideoMixer {
           outputOptions: [
             '-c:v h264_qsv',
             '-preset medium',
-            '-global_quality 23'
+            '-b:v 3000k',
+            '-maxrate 3000k',
+            '-bufsize 6000k'
           ]
         };
         console.log('[VideoMixer] 检测到 Intel Quick Sync 加速支持 (QSV)');
@@ -90,9 +93,10 @@ class VideoMixer {
           outputOptions: [
             '-c:v h264_amf',
             '-quality balanced',
-            '-rc cqp',
-            '-qp_i 23',
-            '-qp_p 23'
+            '-rc vbr_latency',
+            '-b:v 3000k',
+            '-maxrate 3000k',
+            '-bufsize 6000k'
           ]
         };
         console.log('[VideoMixer] 检测到 AMD GPU 加速支持 (AMF)');
@@ -139,7 +143,9 @@ class VideoMixer {
       outputOptions: [
         '-c:v libx264',
         '-preset medium',
-        '-crf 23',
+        '-b:v 3000k',
+        '-maxrate 3000k',
+        '-bufsize 6000k',
         '-c:a aac',
         '-b:a 128k'
       ]
@@ -289,7 +295,9 @@ class VideoMixer {
         outputOpts.push(
           '-c:v libx264',
           '-preset medium',
-          '-crf 23',
+          '-b:v 3000k',
+          '-maxrate 3000k',
+          '-bufsize 6000k',
           '-c:a aac',
           '-b:a 128k'
         );
@@ -318,14 +326,16 @@ class VideoMixer {
   }
 
   /**
-   * 将图片叠加到视频上（支持透明度，强制 720×1280）
+   * 将图片叠加到视频上（支持透明度，强制指定分辨率）
    * @param {string} videoPath - 视频路径
    * @param {string} imagePath - 图片路径
    * @param {string} outputPath - 输出路径
    * @param {number} opacity - 图片透明度 (0-1)
+   * @param {number} targetWidth - 目标宽度（默认 720）
+   * @param {number} targetHeight - 目标高度（默认 1280）
    * @returns {Promise<void>}
    */
-  async overlayImageToVideo(videoPath, imagePath, outputPath, opacity = 0.7) {
+  async overlayImageToVideo(videoPath, imagePath, outputPath, opacity = 0.7, targetWidth = 720, targetHeight = 1280) {
     return new Promise((resolve, reject) => {
       console.log(`[VideoMixer] 图片叠加到视频`);
       console.log(`[VideoMixer] 视频: ${path.basename(videoPath)}`);
@@ -357,9 +367,9 @@ class VideoMixer {
       // 3. 叠加图片到视频上
       cmd.complexFilter([
         // [0:v] 视频流，强制缩放到 720×1280，并设置像素格式
-        '[0:v]scale=720:1280:force_original_aspect_ratio=disable,format=yuv420p[video_scaled]',
-        // [1:v] 图片流，强制缩放到 720×1280（拉伸变形），并设置透明度
-        `[1:v]scale=720:1280:force_original_aspect_ratio=disable,format=rgba,colorchannelmixer=aa=${opacity}[image_overlay]`,
+        `[0:v]scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=disable,format=yuv420p[video_scaled]`,
+        // [1:v] 图片流，强制缩放到目标分辨率（拉伸变形），并设置透明度
+        `[1:v]scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=disable,format=rgba,colorchannelmixer=aa=${opacity}[image_overlay]`,
         // 叠加图片到视频上（位置 0:0，完全覆盖）
         '[video_scaled][image_overlay]overlay=0:0:shortest=1[outv]'
       ]);
@@ -429,9 +439,11 @@ class VideoMixer {
    * @param {Array<string>} videoPaths - 视频路径数组（按顺序拼接）
    * @param {string} outputPath - 输出视频路径
    * @param {string} tempDir - 临时目录
+   * @param {number} targetWidth - 目标宽度（默认 720）
+   * @param {number} targetHeight - 目标高度（默认 1280）
    * @returns {Promise<void>}
    */
-  async concatVideos(videoPaths, outputPath, tempDir) {
+  async concatVideos(videoPaths, outputPath, tempDir, targetWidth = 720, targetHeight = 1280) {
     return new Promise(async (resolve, reject) => {
       try {
         console.log(`[VideoMixer] 拼接 ${videoPaths.length} 个视频`);
@@ -439,11 +451,6 @@ class VideoMixer {
         // 获取编码选项
         const encoderOpts = this.getEncoderOptions();
 
-        // 获取第一个视频的分辨率作为目标分辨率
-        const firstVideoInfo = await this.getVideoInfo(videoPaths[0]);
-        const targetWidth = 720;
-        const targetHeight = 1280;
-        
         console.log(`[VideoMixer] 目标分辨率: ${targetWidth}x${targetHeight}`);
 
         // 构建 filter_complex：先缩放每个视频，再拼接
@@ -490,7 +497,7 @@ class VideoMixer {
           }
           outputOpts.push('-c:a', 'aac', '-b:a', '128k');
         } else {
-          outputOpts.push('-c:v', 'libx264', '-preset', 'medium', '-crf', '23');
+          outputOpts.push('-c:v', 'libx264', '-preset', 'medium', '-b:v', '3000k', '-maxrate', '3000k', '-bufsize', '6000k');
           outputOpts.push('-c:a', 'aac', '-b:a', '128k');
         }
 

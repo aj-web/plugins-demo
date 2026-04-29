@@ -288,33 +288,27 @@ class HighlightMixEditNode {
       if (downloadResult.outputPaths.length === 0) {
         throw new Error('没有可用的短剧原片，无法继续执行');
       }
-      
-      // 步骤4: 扫描图片叠加文件夹
-      console.log('[HighlightMixEdit] 步骤4: 扫描图片叠加文件夹...');
-      const overlayImages = await this.scanImageFolder(params.imageOverlayFolderPath);
-      
-      if (overlayImages.length === 0) {
-        throw new Error('图片叠加文件夹中没有找到图片文件');
-      }
-      
-      console.log('[HighlightMixEdit] 图片数量:', overlayImages.length);
-      
-      // 步骤5: 扫描尾帧文件夹
-      console.log('[HighlightMixEdit] 步骤5: 扫描尾帧文件夹...');
-      const endFrameVideos = await this.scanEndFrameFolder(params.endFrameFolderPath);
-      
-      if (endFrameVideos.length === 0) {
-        throw new Error('尾帧文件夹中没有找到视频文件');
-      }
-      
-      console.log('[HighlightMixEdit] 尾帧视频数量:', endFrameVideos.length);
-      
+
+      // 步骤4: 按尺寸扫描图片叠加文件夹（竖版/横版子目录）
+      console.log('[HighlightMixEdit] 步骤4: 按尺寸扫描图片叠加文件夹...');
+      const overlayImagesByType = await this.scanFolderBySizeType(params.imageOverlayFolderPath, 'image');
+      const hasVerticalOverlay = overlayImagesByType['竖版'].length > 0;
+      const hasHorizontalOverlay = overlayImagesByType['横版'].length > 0;
+      console.log('[HighlightMixEdit] 竖版图片:', overlayImagesByType['竖版'].length, '横版图片:', overlayImagesByType['横版'].length);
+
+      // 步骤5: 按尺寸扫描尾帧文件夹（竖版/横版子目录）
+      console.log('[HighlightMixEdit] 步骤5: 按尺寸扫描尾帧文件夹...');
+      const endFrameVideosByType = await this.scanFolderBySizeType(params.endFrameFolderPath, 'video');
+      const hasVerticalEndFrame = endFrameVideosByType['竖版'].length > 0;
+      const hasHorizontalEndFrame = endFrameVideosByType['横版'].length > 0;
+      console.log('[HighlightMixEdit] 竖版尾帧:', endFrameVideosByType['竖版'].length, '横版尾帧:', endFrameVideosByType['横版'].length);
+
       // 步骤6: 执行混剪处理
       console.log('[HighlightMixEdit] 步骤6: 执行混剪处理...');
       const mixResult = await this.processMixing(
         downloadResult.outputPaths,
-        overlayImages,
-        endFrameVideos,
+        overlayImagesByType,
+        endFrameVideosByType,
         params.outputPath,
         params.endRetentionSeconds
       );
@@ -563,167 +557,166 @@ class HighlightMixEditNode {
   }
 
   /**
-   * 扫描图片文件夹，获取所有图片文件
-   * @param {string} imageFolderPath - 图片文件夹路径
-   * @returns {Promise<Array<string>>} 图片文件路径数组
+   * 扫描文件夹的子目录，按尺寸类型分组返回素材
+   * @param {string} baseFolderPath - 基础文件夹路径
+   * @param {'image'|'video'} type - 素材类型
+   * @returns {Promise<Object>} { 竖版: string[], 横版: string[] }
    */
-  async scanImageFolder(imageFolderPath) {
-    console.log('[HighlightMixEdit] 扫描图片文件夹:', imageFolderPath);
-    
-    try {
-      const files = await fs.readdir(imageFolderPath);
-      
-      // 筛选图片文件（支持 .png, .jpg, .jpeg, .bmp）
-      const imageExtensions = ['.png', '.jpg', '.jpeg', '.bmp'];
-      const imageFiles = files.filter(file => {
-        const ext = path.extname(file).toLowerCase();
-        return imageExtensions.includes(ext);
-      });
-      
-      // 构建完整路径
-      const imageFilePaths = imageFiles.map(file => path.join(imageFolderPath, file));
-      
-      console.log('[HighlightMixEdit] 找到图片文件:', imageFiles);
-      
-      return imageFilePaths;
-    } catch (error) {
-      console.error('[HighlightMixEdit] 扫描图片文件夹失败:', error);
-      throw new Error(`扫描图片文件夹失败: ${error.message}`);
-    }
-  }
+  async scanFolderBySizeType(baseFolderPath, type) {
+    const result = { 竖版: [], 横版: [] };
+    const sizeTypeNames = ['竖版', '横版'];
 
-  /**
-   * 扫描尾帧文件夹，获取所有尾帧视频
-   * @param {string} endFrameFolderPath - 尾帧文件夹路径
-   * @returns {Promise<Array<string>>} 尾帧视频路径数组
-   */
-  async scanEndFrameFolder(endFrameFolderPath) {
-    console.log('[HighlightMixEdit] 扫描尾帧文件夹:', endFrameFolderPath);
-    
-    try {
-      const files = await fs.readdir(endFrameFolderPath);
-      
-      // 筛选视频文件（支持常见视频格式）
-      const videoExtensions = ['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv'];
-      const videoFiles = files.filter(file => {
-        const ext = path.extname(file).toLowerCase();
-        return videoExtensions.includes(ext);
-      });
-      
-      // 构建完整路径
-      const videoFilePaths = videoFiles.map(file => path.join(endFrameFolderPath, file));
-      
-      console.log('[HighlightMixEdit] 找到尾帧视频:', videoFiles);
-      
-      return videoFilePaths;
-    } catch (error) {
-      console.error('[HighlightMixEdit] 扫描尾帧文件夹失败:', error);
-      throw new Error(`扫描尾帧文件夹失败: ${error.message}`);
+    if (!baseFolderPath || baseFolderPath.trim() === '') {
+      console.log('[HighlightMixEdit] 未提供基础文件夹，跳过扫描');
+      return result;
     }
+
+    for (const sizeType of sizeTypeNames) {
+      const subFolderPath = path.join(baseFolderPath, sizeType);
+      try {
+        const files = await fs.readdir(subFolderPath);
+        if (files.length === 0) {
+          console.log(`[HighlightMixEdit] ${sizeType} 文件夹为空`);
+          continue;
+        }
+
+        if (type === 'image') {
+          const imageExtensions = ['.png', '.jpg', '.jpeg', '.bmp'];
+          const imageFiles = files.filter(file => {
+            const ext = path.extname(file).toLowerCase();
+            return imageExtensions.includes(ext);
+          });
+          result[sizeType] = imageFiles.map(f => path.join(subFolderPath, f));
+          console.log(`[HighlightMixEdit] ${sizeType} 图片: ${imageFiles.length} 个`);
+        } else {
+          const videoExtensions = ['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv'];
+          const videoFiles = files.filter(file => {
+            const ext = path.extname(file).toLowerCase();
+            return videoExtensions.includes(ext);
+          });
+          result[sizeType] = videoFiles.map(f => path.join(subFolderPath, f));
+          console.log(`[HighlightMixEdit] ${sizeType} 尾帧视频: ${videoFiles.length} 个`);
+        }
+      } catch (error) {
+        console.log(`[HighlightMixEdit] ${sizeType} 文件夹不存在，跳过`);
+      }
+    }
+
+    return result;
   }
 
   /**
    * 执行混剪处理
    * @param {Array<string>} dramaOutputPaths - 短剧目录路径数组
-   * @param {Array<string>} overlayImages - 叠加图片路径数组
-   * @param {Array<string>} endFrameVideos - 尾帧视频路径数组
+   * @param {Object} overlayImagesByType - 按尺寸分组的图片 { 竖版: [], 横版: [] }
+   * @param {Object} endFrameVideosByType - 按尺寸分组的尾帧 { 竖版: [], 横版: [] }
    * @param {string} baseOutputPath - 基础输出路径
    * @param {number} endRetentionSeconds - 混剪末尾保留秒数
    * @returns {Promise<Object>} 混剪结果
    */
-  async processMixing(dramaOutputPaths, overlayImages, endFrameVideos, baseOutputPath, endRetentionSeconds) {
+  async processMixing(dramaOutputPaths, overlayImagesByType, endFrameVideosByType, baseOutputPath, endRetentionSeconds) {
     console.log('[HighlightMixEdit] 开始混剪处理...');
     console.log('[HighlightMixEdit] 短剧数量:', dramaOutputPaths.length);
-    console.log('[HighlightMixEdit] 图片数量:', overlayImages.length);
-    console.log('[HighlightMixEdit] 尾帧视频数量:', endFrameVideos.length);
+    console.log('[HighlightMixEdit] 竖版图片:', overlayImagesByType['竖版'].length, '横版图片:', overlayImagesByType['横版'].length);
+    console.log('[HighlightMixEdit] 竖版尾帧:', endFrameVideosByType['竖版'].length, '横版尾帧:', endFrameVideosByType['横版'].length);
     console.log('[HighlightMixEdit] 保留秒数:', endRetentionSeconds);
-    
-    // 初始化 FFmpeg
+
     const { initializeFfmpeg } = require('../utils/ffmpeg-locator');
     const { VideoMixer } = require('../utils/video-mixer');
-    
+
     const { ffmpegPath, ffprobePath } = await initializeFfmpeg();
-    const videoMixer = new VideoMixer(ffmpegPath, ffprobePath, true); // 启用 GPU 加速
-    
+    const videoMixer = new VideoMixer(ffmpegPath, ffprobePath, true);
+
     console.log('[HighlightMixEdit] FFmpeg 路径:', ffmpegPath);
     console.log('[HighlightMixEdit] FFprobe 路径:', ffprobePath);
-    
-    // 等待 GPU 检测完成（最多等待 3 秒）
-    console.log('[HighlightMixEdit] 等待 GPU 检测...');
+
     await new Promise(resolve => setTimeout(resolve, 3000));
-    
-    // 显示 GPU 状态
+
     const gpuStatus = videoMixer.getGPUStatus();
     console.log('[HighlightMixEdit] GPU 状态:', gpuStatus.message);
     if (gpuStatus.detected) {
       console.log('[HighlightMixEdit] GPU 编码器:', gpuStatus.encoder);
     }
-    
-    // 生成带日期的输出路径: baseOutputPath\高光混剪\2026-02-03
+
     const now = new Date();
     const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const mixedOutputBasePath = path.join(baseOutputPath, '高光混剪', dateStr);
-    
+
     console.log('[HighlightMixEdit] 混剪输出基础路径:', mixedOutputBasePath);
-    
-    // 创建输出目录
+
     await fs.mkdir(mixedOutputBasePath, { recursive: true });
-    
-    // 创建临时目录
+
     const tempDir = path.join(mixedOutputBasePath, 'temp');
     await fs.mkdir(tempDir, { recursive: true });
-    
+
     let totalOutputCount = 0;
-    
-    // 遍历每个短剧目录
+
     for (const dramaPath of dramaOutputPaths) {
       const dramaName = path.basename(dramaPath);
       console.log('[HighlightMixEdit] ========================================');
       console.log('[HighlightMixEdit] 处理短剧:', dramaName);
       console.log('[HighlightMixEdit] 短剧路径:', dramaPath);
-      
+
       try {
-        // 扫描短剧目录中的所有视频文件
         const episodeVideos = await this.scanDramaVideos(dramaPath);
-        
+
         if (episodeVideos.length < 3) {
           console.warn(`[HighlightMixEdit] 短剧 ${dramaName} 集数不足 3 集，跳过`);
           continue;
         }
-        
+
         console.log('[HighlightMixEdit] 短剧总集数:', episodeVideos.length);
-        
-        // 创建短剧输出目录
+
+        // 检测整部剧的尺寸类型（以第1集为准）
+        const aspectType = await this.detectVideoAspectType(videoMixer, episodeVideos[0].filePath);
+        const { targetWidth, targetHeight } = aspectType === '竖版'
+          ? { targetWidth: 720, targetHeight: 1280 }
+          : { targetWidth: 1280, targetHeight: 720 };
+        console.log(`[HighlightMixEdit] 尺寸类型: ${aspectType}, 输出分辨率: ${targetWidth}x${targetHeight}`);
+
         const dramaOutputPath = path.join(mixedOutputBasePath, dramaName);
         await fs.mkdir(dramaOutputPath, { recursive: true });
-        
-        // 计算产出物数量（总集数 - 2）
+
         const outputCount = episodeVideos.length - 2;
         console.log('[HighlightMixEdit] 预计产出物数量:', outputCount);
-        
-        // 遍历生成混剪视频
+
+        // 按尺寸取对应素材（找不到则为空数组）
+        const overlayImages = overlayImagesByType[aspectType];
+        const endFrameVideos = endFrameVideosByType[aspectType];
+        const hasOverlayImage = overlayImages.length > 0;
+        const hasEndFrame = endFrameVideos.length > 0;
+
+        if (hasOverlayImage) {
+          console.log(`[HighlightMixEdit] 使用 ${aspectType} 图片叠加，当前可用: ${overlayImages.length} 张`);
+        } else {
+          console.log(`[HighlightMixEdit] ${aspectType} 图片文件夹为空或不存在，跳过图片叠加`);
+        }
+        if (hasEndFrame) {
+          console.log(`[HighlightMixEdit] 使用 ${aspectType} 尾帧，当前可用: ${endFrameVideos.length} 个`);
+        } else {
+          console.log(`[HighlightMixEdit] ${aspectType} 尾帧文件夹为空或不存在，跳过尾帧拼接`);
+        }
+
         for (let i = 0; i < outputCount; i++) {
           const episode1 = episodeVideos[i];
           const episode2 = episodeVideos[i + 1];
           const episode3 = episodeVideos[i + 2];
-          
-          // 提取集数（从文件名中）
+
           const episodeNum1 = this.extractEpisodeNumber(episode1.fileName);
           const episodeNum2 = this.extractEpisodeNumber(episode2.fileName);
           const episodeNum3 = this.extractEpisodeNumber(episode3.fileName);
-          
-          // 生成输出文件名: 第1-3集30s混剪.mp4
+
           const outputFileName = `第${episodeNum1}-${episodeNum3}集${endRetentionSeconds}s混剪.mp4`;
           const outputFilePath = path.join(dramaOutputPath, outputFileName);
-          
+
           console.log(`[HighlightMixEdit] -------------------- 混剪 ${i + 1}/${outputCount} --------------------`);
           console.log(`[HighlightMixEdit] 第1集: ${episode1.fileName} (截取末尾 ${endRetentionSeconds}s)`);
           console.log(`[HighlightMixEdit] 第2集: ${episode2.fileName} (完整)`);
           console.log(`[HighlightMixEdit] 第3集: ${episode3.fileName} (完整)`);
           console.log(`[HighlightMixEdit] 输出: ${outputFileName}`);
-          
+          console.log(`[HighlightMixEdit] 尺寸类型: ${aspectType} (${targetWidth}x${targetHeight})`);
+
           try {
-            // 执行混剪（加入图片叠加）
             await this.mixThreeEpisodes(
               videoMixer,
               episode1.filePath,
@@ -733,33 +726,34 @@ class HighlightMixEditNode {
               endFrameVideos,
               outputFilePath,
               endRetentionSeconds,
-              tempDir
+              tempDir,
+              targetWidth,
+              targetHeight
             );
-            
+
             totalOutputCount++;
             console.log(`[HighlightMixEdit] ✓ 混剪成功: ${outputFileName}`);
           } catch (error) {
             console.error(`[HighlightMixEdit] ✗ 混剪失败: ${outputFileName}`, error.message);
           }
         }
-        
+
         console.log('[HighlightMixEdit] 短剧处理完成:', dramaName);
       } catch (error) {
         console.error(`[HighlightMixEdit] 处理短剧失败: ${dramaName}`, error.message);
       }
     }
-    
-    // 清理临时目录
+
     try {
       await fs.rm(tempDir, { recursive: true, force: true });
       console.log('[HighlightMixEdit] 临时目录清理完成');
     } catch (error) {
       console.warn('[HighlightMixEdit] 清理临时目录失败:', error.message);
     }
-    
+
     console.log('[HighlightMixEdit] 混剪处理全部完成');
     console.log('[HighlightMixEdit] 总计产出物数量:', totalOutputCount);
-    
+
     return {
       totalOutputCount: totalOutputCount,
       outputPath: mixedOutputBasePath
@@ -812,16 +806,31 @@ class HighlightMixEditNode {
   }
 
   /**
-   * 混剪三集视频（含图片叠加）
+   * 检测视频的尺寸类型（竖版/横版）
+   * @param {VideoMixer} videoMixer - 视频混剪工具
+   * @param {string} videoPath - 视频路径
+   * @returns {Promise<string>} '竖版' 或 '横版'
+   */
+  async detectVideoAspectType(videoMixer, videoPath) {
+    const info = await videoMixer.getVideoInfo(videoPath);
+    const { width, height } = info;
+    console.log(`[HighlightMixEdit] 视频尺寸: ${width}x${height}`);
+    return width > height ? '横版' : '竖版';
+  }
+
+  /**
+   * 混剪三集视频（含图片叠加 + 尾帧拼接，按尺寸统一输出分辨率）
    * @param {VideoMixer} videoMixer - 视频混剪工具
    * @param {string} episode1Path - 第1集路径
    * @param {string} episode2Path - 第2集路径
    * @param {string} episode3Path - 第3集路径
-   * @param {Array<string>} overlayImages - 叠加图片数组
-   * @param {Array<string>} endFrameVideos - 尾帧视频数组
+   * @param {Array<string>} overlayImages - 叠加图片数组（按尺寸类型，可能为空）
+   * @param {Array<string>} endFrameVideos - 尾帧视频数组（按尺寸类型，可能为空）
    * @param {string} outputPath - 输出路径
    * @param {number} endRetentionSeconds - 第1集保留秒数
    * @param {string} tempDir - 临时目录
+   * @param {number} targetWidth - 目标宽度（720 或 1280）
+   * @param {number} targetHeight - 目标高度（1280 或 720）
    * @returns {Promise<void>}
    */
   async mixThreeEpisodes(
@@ -833,51 +842,87 @@ class HighlightMixEditNode {
     endFrameVideos,
     outputPath,
     endRetentionSeconds,
-    tempDir
+    tempDir,
+    targetWidth,
+    targetHeight
   ) {
-    // 1. 获取第1集的视频时长
     const duration1 = await videoMixer.getVideoDuration(episode1Path);
     console.log(`[HighlightMixEdit] 第1集时长: ${duration1}s`);
-    
-    // 2. 计算第1集的起始时间（从后往前截取）
+
     const startTime1 = Math.max(0, duration1 - endRetentionSeconds);
     const actualDuration1 = duration1 - startTime1;
-    
+
     console.log(`[HighlightMixEdit] 第1集截取: 起始 ${startTime1}s, 时长 ${actualDuration1}s`);
-    
-    // 3. 裁剪第1集的末尾部分
+
+    // 1. 裁剪第1集的末尾部分
     const tempEpisode1Path = path.join(tempDir, `episode1_trimmed_${Date.now()}.mp4`);
     await videoMixer.trimVideo(episode1Path, tempEpisode1Path, startTime1, actualDuration1);
-    
-    // 4. 拼接三集视频：第1集末尾 + 第2集完整 + 第3集完整
+
+    // 2. 拼接三集视频：第1集末尾 + 第2集完整 + 第3集完整（统一目标分辨率）
     const tempConcatPath = path.join(tempDir, `concat_${Date.now()}.mp4`);
     console.log('[HighlightMixEdit] 开始拼接 3 集视频...');
-    await videoMixer.concatVideos([tempEpisode1Path, episode2Path, episode3Path], tempConcatPath, tempDir);
-    
-    // 5. 随机选择一张图片进行叠加
-    const randomImage = overlayImages[Math.floor(Math.random() * overlayImages.length)];
-    console.log(`[HighlightMixEdit] 选择图片: ${path.basename(randomImage)}`);
-    
-    // 6. 图片叠加到拼接后的视频（透明度 0.7，720×1280）
-    const tempOverlayPath = path.join(tempDir, `overlay_${Date.now()}.mp4`);
-    console.log('[HighlightMixEdit] 开始图片叠加...');
-    await videoMixer.overlayImageToVideo(tempConcatPath, randomImage, tempOverlayPath, 0.7);
-    
-    // 7. 随机选择一个尾帧视频
-    const randomEndFrame = endFrameVideos[Math.floor(Math.random() * endFrameVideos.length)];
-    console.log(`[HighlightMixEdit] 选择尾帧: ${path.basename(randomEndFrame)}`);
-    
-    // 8. 拼接尾帧：带图片的视频 + 尾帧
-    console.log('[HighlightMixEdit] 开始拼接尾帧...');
-    await videoMixer.concatVideos([tempOverlayPath, randomEndFrame], outputPath, tempDir);
-    
-    // 9. 清理临时文件
-    try {
-      await fs.unlink(tempEpisode1Path);
-      await fs.unlink(tempConcatPath);
-      await fs.unlink(tempOverlayPath);
-    } catch (error) {
-      console.warn('[HighlightMixEdit] 清理临时文件失败:', error.message);
+    await videoMixer.concatVideos(
+      [tempEpisode1Path, episode2Path, episode3Path],
+      tempConcatPath,
+      tempDir,
+      targetWidth,
+      targetHeight
+    );
+
+    let currentVideoPath = tempConcatPath;
+
+    // 3. 图片叠加（仅当有对应尺寸图片时执行）
+    if (overlayImages.length > 0) {
+      const randomImage = overlayImages[Math.floor(Math.random() * overlayImages.length)];
+      console.log(`[HighlightMixEdit] 选择图片: ${path.basename(randomImage)}`);
+
+      const tempOverlayPath = path.join(tempDir, `overlay_${Date.now()}.mp4`);
+      console.log('[HighlightMixEdit] 开始图片叠加...');
+      await videoMixer.overlayImageToVideo(
+        currentVideoPath,
+        randomImage,
+        tempOverlayPath,
+        0.7,
+        targetWidth,
+        targetHeight
+      );
+      currentVideoPath = tempOverlayPath;
+    } else {
+      console.log('[HighlightMixEdit] 跳过图片叠加（无素材）');
+    }
+
+    // 4. 尾帧拼接（仅当有对应尺寸尾帧时执行）
+    if (endFrameVideos.length > 0) {
+      const randomEndFrame = endFrameVideos[Math.floor(Math.random() * endFrameVideos.length)];
+      console.log(`[HighlightMixEdit] 选择尾帧: ${path.basename(randomEndFrame)}`);
+
+      console.log('[HighlightMixEdit] 开始拼接尾帧...');
+      await videoMixer.concatVideos(
+        [currentVideoPath, randomEndFrame],
+        outputPath,
+        tempDir,
+        targetWidth,
+        targetHeight
+      );
+    } else {
+      console.log('[HighlightMixEdit] 跳过尾帧拼接（无素材）');
+      // 如果跳过了尾帧拼接，需要将当前视频复制到输出路径
+      if (currentVideoPath !== outputPath) {
+        await fs.copyFile(currentVideoPath, outputPath);
+      }
+    }
+
+    // 5. 清理临时文件
+    const tempFiles = [tempEpisode1Path, tempConcatPath];
+    if (currentVideoPath !== tempConcatPath && currentVideoPath !== outputPath) {
+      tempFiles.push(currentVideoPath);
+    }
+    for (const file of tempFiles) {
+      try {
+        await fs.unlink(file);
+      } catch (error) {
+        console.warn(`[HighlightMixEdit] 清理临时文件失败: ${file}`, error.message);
+      }
     }
   }
 

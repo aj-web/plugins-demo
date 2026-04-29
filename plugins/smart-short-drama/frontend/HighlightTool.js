@@ -84,61 +84,46 @@ export const HighlightTool = {
           };
         }
 
-        const latestTask = highlightTasks[0];
-        console.log('[HighlightTool] 最新的高光混剪任务:', latestTask);
+        // 辅助函数：从候选任务列表中，从最新往回找，找到第一个有可用原片数据的任务
+        // （状态为"已完成" 且 usergrowth.outputPaths 不为空）
+        const findFirstUsableTask = (tasks) => {
+          for (const task of tasks) {
+            if (task.status === '已完成' && task.usergrowth && task.usergrowth.outputPaths) {
+              const paths = task.usergrowth.outputPaths;
+              const hasPaths = Array.isArray(paths) ? paths.length > 0 : (typeof paths === 'string' && paths.trim() !== '');
+              if (hasPaths) {
+                return task;
+              }
+            }
+          }
+          return null;
+        };
 
-        // 判断任务状态
-        const taskStatus = latestTask.status;
-        
-        // 如果任务是"执行中"，显示部分就绪
-        if (taskStatus === '执行中') {
-          return {
-            id: 'dramaOriginal',
-            name: '短剧原片',
-            status: 'partial',
-            readyTime: '-',
-            folderPath: latestTask.outputPath || '',
-            details: { readyList: [], missingList: ['任务执行中，请稍候...'] }
-          };
-        }
+        const latestTask = findFirstUsableTask(highlightTasks);
+        console.log('[HighlightTool] 有可用原片数据的最新任务:', latestTask);
 
-        // 如果任务是"待执行"，显示未就绪
-        if (taskStatus === '待执行') {
-          return {
-            id: 'dramaOriginal',
-            name: '短剧原片',
-            status: 'not_ready',
-            readyTime: '-',
-            folderPath: latestTask.outputPath || '',
-            details: { readyList: [], missingList: ['任务待执行'] }
-          };
-        }
-
-        // 如果任务是"已失败"，显示未就绪
-        if (taskStatus === '已失败') {
+        if (!latestTask) {
+          // 没有找到任何有可用数据的任务，尝试给出一个友好提示
+          const firstTask = highlightTasks[0];
+          let hintMsg = '最近的任务均未成功下载短剧原片';
+          if (firstTask) {
+            if (firstTask.status === '执行中') hintMsg = '最近任务正在执行中，请稍候...';
+            else if (firstTask.status === '待执行') hintMsg = '最近任务正在排队等待执行';
+            else if (firstTask.status === '已失败') hintMsg = '最近任务执行失败，请重试或检查原因';
+            else hintMsg = '最近任务未包含可用的短剧原片数据';
+          }
           return {
             id: 'dramaOriginal',
             name: '短剧原片',
             status: 'not_ready',
-            readyTime: latestTask.completedAt?.split(' ')[1] || '-',
-            folderPath: latestTask.outputPath || '',
-            details: { readyList: [], missingList: ['任务执行失败'] }
+            readyTime: firstTask?.completedAt?.split(' ')[1] || '-',
+            folderPath: '',
+            details: { readyList: [], missingList: [hintMsg] }
           };
         }
 
-        // 任务状态为"已完成"，检查 usergrowth 字段
+        // latestTask 已由 findFirstUsableTask 保证为「已完成」且「有 usergrowth.outputPaths」的任务，无需再判断状态
         const usergrowth = latestTask.usergrowth;
-        if (!usergrowth || !usergrowth.outputPaths || usergrowth.outputPaths.length === 0) {
-          return {
-            id: 'dramaOriginal',
-            name: '短剧原片',
-            status: 'not_ready',
-            readyTime: latestTask.completedAt?.split(' ')[1] || '-',
-            folderPath: latestTask.outputPath || '',
-            details: { readyList: [], missingList: ['该任务未下载短剧原片'] }
-          };
-        }
-
         // 兼容 outputPaths 格式：可能是数组（高光混剪）或分号分隔字符串（爆款复刻）
         let firstOutputPath = '';
         if (Array.isArray(usergrowth.outputPaths)) {
@@ -164,6 +149,20 @@ export const HighlightTool = {
           return count ? `${dramaName} (${count}集)` : dramaName;
         });
 
+        // 历史任务就绪 → 提取 params 回填表单
+        if (latestTask.params) {
+          const p = latestTask.params;
+          if (p.imageOverlayFolderPath && !imageOverlay.value) imageOverlay.value = p.imageOverlayFolderPath;
+          if (p.endFrameFolderPath && !localEndFrame.value) localEndFrame.value = p.endFrameFolderPath;
+          if (p.outputPath && !outputPath.value) outputPath.value = p.outputPath.replace(/\//g, '\\');
+          if ((p.endRetentionSeconds != null) && !endRetentionSeconds.value) endRetentionSeconds.value = p.endRetentionSeconds;
+          if (p.dramaListFilePath && !dramaListFilePath.value) {
+            dramaListFilePath.value = p.dramaListFilePath;
+            fileName.value = p.dramaListFilePath.split(/[/\\]/).pop();
+          }
+          console.log('[HighlightTool] 已从历史任务自动回填表单参数');
+        }
+
         return {
           id: 'dramaOriginal',
           name: '短剧原片',
@@ -173,7 +172,8 @@ export const HighlightTool = {
           details: {
             readyList: readyList,
             missingList: []
-          }
+          },
+          latestTask: latestTask  // 携带完整任务供外部使用
         };
       } catch (error) {
         console.error('[HighlightTool] 加载短剧原片数据失败:', error);
