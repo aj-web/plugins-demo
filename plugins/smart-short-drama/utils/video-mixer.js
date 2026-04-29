@@ -39,27 +39,27 @@ class VideoMixer {
       const { stdout } = await execAsync(`"${this.ffmpegPath}" -encoders -hide_banner`);
       
       // 检测 NVIDIA NVENC (优先级最高)
-      if (stdout.includes('h264_nvenc') || stdout.includes('hevc_nvenc')) {
-        this.gpuType = 'nvidia';
-        this.hwAccelOptions = {
-          decoder: 'h264_cuvid',  // NVIDIA 硬件解码
-          encoder: 'h264_nvenc',   // NVIDIA 硬件编码
-          pixelFormat: 'yuv420p',
-          preset: 'p4',            // p1-p7, p4 是速度和质量的平衡
-          inputOptions: ['-hwaccel cuda', '-hwaccel_output_format cuda'],
-          outputOptions: [
-            '-c:v h264_nvenc',
-            '-preset p4',
-            '-tune hq',
-            '-rc vbr',
-            '-b:v 3000k',
-            '-maxrate 3000k',
-            '-bufsize 6000k',
-            '-gpu 0',
-            '-bf 3',
-            '-rc-lookahead 32'
-          ]
-        };
+        if (stdout.includes('h264_nvenc') || stdout.includes('hevc_nvenc')) {
+          this.gpuType = 'nvidia';
+          this.hwAccelOptions = {
+            decoder: 'h264_cuvid',  // NVIDIA 硬件解码
+            encoder: 'h264_nvenc',   // NVIDIA 硬件编码
+            pixelFormat: 'yuv420p',
+            preset: 'p4',            // p1-p7, p4 是速度和质量的平衡
+            inputOptions: ['-hwaccel cuda', '-hwaccel_output_format cuda'],
+            outputOptions: [
+              '-c:v h264_nvenc',
+              '-preset p4',
+              '-tune hq',
+              '-rc vbr',
+              '-b:v 2800k',
+              '-maxrate 2800k',
+              '-bufsize 2800k',
+              '-gpu 0',
+              '-bf 3',
+              '-rc-lookahead 32'
+            ]
+          };
         console.log('[VideoMixer] 检测到 NVIDIA GPU 加速支持 (NVENC)');
       }
       // 检测 Intel Quick Sync
@@ -74,9 +74,9 @@ class VideoMixer {
           outputOptions: [
             '-c:v h264_qsv',
             '-preset medium',
-            '-b:v 3000k',
-            '-maxrate 3000k',
-            '-bufsize 6000k'
+            '-b:v 2800k',
+            '-maxrate 2800k',
+            '-bufsize 2800k'
           ]
         };
         console.log('[VideoMixer] 检测到 Intel Quick Sync 加速支持 (QSV)');
@@ -94,9 +94,9 @@ class VideoMixer {
             '-c:v h264_amf',
             '-quality balanced',
             '-rc vbr_latency',
-            '-b:v 3000k',
-            '-maxrate 3000k',
-            '-bufsize 6000k'
+            '-b:v 2800k',
+            '-maxrate 2800k',
+            '-bufsize 2800k'
           ]
         };
         console.log('[VideoMixer] 检测到 AMD GPU 加速支持 (AMF)');
@@ -143,9 +143,9 @@ class VideoMixer {
       outputOptions: [
         '-c:v libx264',
         '-preset medium',
-        '-b:v 3000k',
-        '-maxrate 3000k',
-        '-bufsize 6000k',
+        '-b:v 2800k',
+        '-maxrate 2800k',
+        '-bufsize 2800k',
         '-c:a aac',
         '-b:a 128k'
       ]
@@ -295,9 +295,9 @@ class VideoMixer {
         outputOpts.push(
           '-c:v libx264',
           '-preset medium',
-          '-b:v 3000k',
-          '-maxrate 3000k',
-          '-bufsize 6000k',
+          '-b:v 2800k',
+          '-maxrate 2800k',
+          '-bufsize 2800k',
           '-c:a aac',
           '-b:a 128k'
         );
@@ -376,26 +376,21 @@ class VideoMixer {
 
       // 输出选项
       const outputOpts = [
-        '-map [outv]',            // 映射叠加后的视频流
-        '-map 0:a?',              // 映射原视频的音频流（如果有）
-        '-shortest',              // 以最短的输入流为准
-        '-b:v 3000k',             // 视频比特率 3000kb/s
-        '-maxrate 3000k',         // 最大比特率
-        '-bufsize 6000k'          // 缓冲区大小
+        '-map [outv]',
+        '-map 0:a?',
+        '-shortest'
       ];
 
       // 添加编码器特定选项
       if (encoderOpts.useGPU) {
-        // GPU 编码时，调整比特率参数
         outputOpts.push('-c:v', encoderOpts.videoCodec);
         if (encoderOpts.gpuType === 'nvidia') {
-          // 使用更保守的 NVENC 参数提高稳定性
           outputOpts.push(
             '-preset', 'p4',
             '-tune', 'hq',
-            '-b:v', '3000k',
-            '-maxrate', '4500k',
-            '-bufsize', '6000k',
+            '-b:v', '2800k',
+            '-maxrate', '2800k',
+            '-bufsize', '2800k',
             '-bf', '2',
             '-rc-lookahead', '16'
           );
@@ -407,6 +402,9 @@ class VideoMixer {
         outputOpts.push(
           '-c:v', 'libx264',
           '-preset', 'medium',
+          '-b:v', '2800k',
+          '-maxrate', '2800k',
+          '-bufsize', '2800k',
           '-c:a', 'aac',
           '-b:a', '128k'
         );
@@ -491,14 +489,29 @@ class VideoMixer {
         if (encoderOpts.useGPU) {
           outputOpts.push('-c:v', encoderOpts.videoCodec);
           if (encoderOpts.gpuType === 'nvidia') {
-            outputOpts.push('-preset', 'p4', '-tune', 'hq', '-b:v', '3000k');
+            outputOpts.push(
+              '-preset', 'p4',
+              '-tune', 'hq',
+              '-b:v', '2800k',
+              '-maxrate', '2800k',
+              '-bufsize', '2800k',
+              '-bf', '2',
+              '-rc-lookahead', '16'
+            );
           } else {
             outputOpts.push(...encoderOpts.outputOptions.filter(opt => !opt.includes('crf') && !opt.includes('cq')));
           }
           outputOpts.push('-c:a', 'aac', '-b:a', '128k');
         } else {
-          outputOpts.push('-c:v', 'libx264', '-preset', 'medium', '-b:v', '3000k', '-maxrate', '3000k', '-bufsize', '6000k');
-          outputOpts.push('-c:a', 'aac', '-b:a', '128k');
+          outputOpts.push(
+            '-c:v', 'libx264',
+            '-preset', 'medium',
+            '-b:v', '2800k',
+            '-maxrate', '2800k',
+            '-bufsize', '2800k',
+            '-c:a', 'aac',
+            '-b:a', '128k'
+          );
         }
 
         cmd.outputOptions(outputOpts)
