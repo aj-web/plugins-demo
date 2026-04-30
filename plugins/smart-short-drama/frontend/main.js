@@ -202,14 +202,14 @@ const App = {
           } else {
             eventType = 'highlight-mix-edit-auto-start';
             // 验证必需参数
-            if (!originalTask.params.dramaListFilePath || !originalTask.params.endFrameFolderPath || !originalTask.params.outputPath) {
+            if (!originalTask.params.endFrameFolderPath || !originalTask.params.outputPath) {
               console.error('[App] 高光混剪任务参数不完整:', originalTask.params);
               showToast({ message: '任务参数不完整，无法重试', type: 'error', duration: 3000 });
               return;
             }
             // 从 params 中提取参数并转换为数组
             args = [
-              originalTask.params.dramaListFilePath,
+              originalTask.params.dramaListFilePath || '',
               originalTask.params.imageOverlayFolderPath || '',
               originalTask.params.endFrameFolderPath,
               originalTask.params.outputPath,

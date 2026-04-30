@@ -18,6 +18,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   invoke: (channel: string, ...args: any[]) => {
     return ipcRenderer.invoke(channel, ...args);
   },
+  getActivationStatus: () => {
+    return ipcRenderer.invoke('activation:get-status');
+  },
+  activateClient: (key: string) => {
+    return ipcRenderer.invoke('activation:activate', key);
+  },
+  getActivationUserId: () => {
+    return ipcRenderer.invoke('activation:get-user-id');
+  },
   checkFileExists: (filePath: string) => {
     console.log('[preload] checkFileExists called with filePath:', filePath);
     return ipcRenderer.invoke('check-file-exists', filePath);

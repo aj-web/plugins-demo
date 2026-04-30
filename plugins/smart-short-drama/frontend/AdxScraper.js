@@ -4,6 +4,7 @@ import { ReadinessPanel } from './components.js';
 import { triggerEvent, invokeIpc, unwrapIpcResponse } from './ipc.js';
 import { showToast, showPrompt } from './Prompt.js';
 import { fetchQiancangDataWithCache } from './dataSourceUtils.js';
+import { TrackingEvent, TrackingPage, trackClick } from './tracking.js';
 
 const { h } = Vue;
 
@@ -108,6 +109,8 @@ export const AdxScraper = {
     loadQiancangData();
 
     const handleRunNow = async () => {
+      trackClick(TrackingEvent.ADX_START, TrackingPage.ADX_SCRAPER);
+
       try {
         // assemble dramaData from readinessItems (group 1 items) if available
         const platform = readinessItems.value && readinessItems.value[0];

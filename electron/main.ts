@@ -2,13 +2,10 @@ import { app, ipcMain } from 'electron';
 import { setupIpcHandlers } from './ipcHandlers';
 import { windowManager } from './window';
 import { configManager } from './config';
-import TrackerUtil from './tracker-util';
 import { pluginManager } from './services/plugin-manager';
 import { scheduler } from './services/scheduler';
 import { staticServer } from './static-server';
 import { logger } from './logger';
-
-let tracker: TrackerUtil | null = null;
 
 // 添加详细的启动日志
 logger.log('=== 应用启动开始 ===');
@@ -33,26 +30,10 @@ async function startApp(): Promise<void> {
     staticServer.start();
     logger.log('[startApp] 插件静态服务器已启动');
 
-    // Tracker 登录上报
+    // 读取配置文件。激活逻辑由 activation service 处理；启动期不再自动调用登录接口。
     logger.log('[startApp] 读取配置文件...');
     const config = configManager.getConfig();
     logger.log('[startApp] 配置文件内容:', config);
-
-    if (config.tracker?.enabled) {
-      logger.log('[startApp] 初始化 Tracker...');
-      tracker = new TrackerUtil();
-      (global as any).tracker = tracker;
-
-      try {
-        logger.log('[startApp] Tracker 配置:', tracker.getConfig());
-        const loginResult = await tracker.login();
-        logger.log('[startApp] Tracker 登录成功:', loginResult);
-      } catch (e) {
-        logger.warn('[startApp] Tracker 登录失败:', e);
-      }
-    } else {
-      logger.warn('[startApp] Tracker 未启用，跳过 Tracker 登录');
-    }
 
     logger.log('[startApp] 设置 IPC 处理器...');
     setupIpcHandlers();

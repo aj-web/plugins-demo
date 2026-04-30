@@ -4,6 +4,7 @@ import { ReadinessPanel } from './components.js';
 import { fetchQiancangDataWithCache } from './dataSourceUtils.js';
 import { triggerEvent, invokeIpc, unwrapIpcResponse } from './ipc.js';
 import { showToast } from './Prompt.js';
+import { TrackingEvent, TrackingPage, trackClick } from './tracking.js';
 
 const { h, ref, onMounted, watch } = Vue;
 
@@ -230,6 +231,7 @@ export const ReplicationSettings = {
 
     // 立即执行任务
     const handleRunNow = async () => {
+      trackClick(TrackingEvent.REPLICATION_START, TrackingPage.REPLICATION);
       console.log('[ReplicationSettings] 立即执行任务');
 
       // 前端判断登录状态

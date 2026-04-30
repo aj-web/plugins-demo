@@ -10,14 +10,26 @@ const { exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
 
+const DEFAULT_ENCODING_OPTIONS = {
+  videoBitrateK: 2800,
+  videoMaxrateK: 2800,
+  videoBufsizeK: 2800,
+  audioBitrateK: 128
+};
+
 class VideoMixer {
-  constructor(ffmpegPath, ffprobePath, enableGPU = true) {
+  constructor(ffmpegPath, ffprobePath, enableGPU = true, encodingOptions = {}) {
     this.ffmpegPath = ffmpegPath;
     this.ffprobePath = ffprobePath;
     this.enableGPU = enableGPU;
+    this.encodingOptions = {
+      ...DEFAULT_ENCODING_OPTIONS,
+      ...encodingOptions
+    };
     this.gpuType = null; // 'nvidia', 'intel', 'amd', 或 null
     this.hwAccelOptions = null;
     console.log('[VideoMixer] 初始化视频混剪工具');
+    console.log('[VideoMixer] 编码配置:', this.getEncodingSummary());
     
     // 异步检测 GPU（不阻塞初始化）
     if (this.enableGPU) {
@@ -25,6 +37,61 @@ class VideoMixer {
         console.warn('[VideoMixer] GPU 检测失败，将使用 CPU 模式:', err.message);
       });
     }
+  }
+
+  getEncodingSummary() {
+    return {
+      videoBitrate: this.getVideoBitrate(),
+      videoMaxrate: this.getVideoMaxrate(),
+      videoBufsize: this.getVideoBufsize(),
+      audioBitrate: this.getAudioBitrate()
+    };
+  }
+
+  getVideoBitrate() {
+    return `${this.encodingOptions.videoBitrateK}k`;
+  }
+
+  getVideoMaxrate() {
+    return `${this.encodingOptions.videoMaxrateK}k`;
+  }
+
+  getVideoBufsize() {
+    return `${this.encodingOptions.videoBufsizeK}k`;
+  }
+
+  getAudioBitrate() {
+    return `${this.encodingOptions.audioBitrateK}k`;
+  }
+
+  getVideoBitrateOptionStrings() {
+    return [
+      `-b:v ${this.getVideoBitrate()}`,
+      `-maxrate ${this.getVideoMaxrate()}`,
+      `-bufsize ${this.getVideoBufsize()}`
+    ];
+  }
+
+  getVideoBitrateOptionPairs() {
+    return [
+      '-b:v', this.getVideoBitrate(),
+      '-maxrate', this.getVideoMaxrate(),
+      '-bufsize', this.getVideoBufsize()
+    ];
+  }
+
+  getAudioOptionStrings() {
+    return [
+      '-c:a aac',
+      `-b:a ${this.getAudioBitrate()}`
+    ];
+  }
+
+  getAudioOptionPairs() {
+    return [
+      '-c:a', 'aac',
+      '-b:a', this.getAudioBitrate()
+    ];
   }
 
   /**
@@ -52,9 +119,7 @@ class VideoMixer {
               '-preset p4',
               '-tune hq',
               '-rc vbr',
-              '-b:v 2800k',
-              '-maxrate 2800k',
-              '-bufsize 2800k',
+              ...this.getVideoBitrateOptionStrings(),
               '-gpu 0',
               '-bf 3',
               '-rc-lookahead 32'
@@ -74,9 +139,7 @@ class VideoMixer {
           outputOptions: [
             '-c:v h264_qsv',
             '-preset medium',
-            '-b:v 2800k',
-            '-maxrate 2800k',
-            '-bufsize 2800k'
+            ...this.getVideoBitrateOptionStrings()
           ]
         };
         console.log('[VideoMixer] 检测到 Intel Quick Sync 加速支持 (QSV)');
@@ -94,9 +157,7 @@ class VideoMixer {
             '-c:v h264_amf',
             '-quality balanced',
             '-rc vbr_latency',
-            '-b:v 2800k',
-            '-maxrate 2800k',
-            '-bufsize 2800k'
+            ...this.getVideoBitrateOptionStrings()
           ]
         };
         console.log('[VideoMixer] 检测到 AMD GPU 加速支持 (AMF)');
@@ -129,8 +190,7 @@ class VideoMixer {
         videoCodec: this.hwAccelOptions.encoder,
         outputOptions: [
           ...this.hwAccelOptions.outputOptions,
-          '-c:a aac',
-          '-b:a 128k'
+          ...this.getAudioOptionStrings()
         ]
       };
     }
@@ -143,11 +203,8 @@ class VideoMixer {
       outputOptions: [
         '-c:v libx264',
         '-preset medium',
-        '-b:v 2800k',
-        '-maxrate 2800k',
-        '-bufsize 2800k',
-        '-c:a aac',
-        '-b:a 128k'
+        ...this.getVideoBitrateOptionStrings(),
+        ...this.getAudioOptionStrings()
       ]
     };
   }
@@ -295,11 +352,8 @@ class VideoMixer {
         outputOpts.push(
           '-c:v libx264',
           '-preset medium',
-          '-b:v 2800k',
-          '-maxrate 2800k',
-          '-bufsize 2800k',
-          '-c:a aac',
-          '-b:a 128k'
+          ...this.getVideoBitrateOptionStrings(),
+          ...this.getAudioOptionStrings()
         );
       }
 
@@ -388,25 +442,20 @@ class VideoMixer {
           outputOpts.push(
             '-preset', 'p4',
             '-tune', 'hq',
-            '-b:v', '2800k',
-            '-maxrate', '2800k',
-            '-bufsize', '2800k',
+            ...this.getVideoBitrateOptionPairs(),
             '-bf', '2',
             '-rc-lookahead', '16'
           );
         } else {
           outputOpts.push(...encoderOpts.outputOptions.filter(opt => !opt.includes('crf') && !opt.includes('cq')));
         }
-        outputOpts.push('-c:a', 'aac', '-b:a', '128k');
+        outputOpts.push(...this.getAudioOptionPairs());
       } else {
         outputOpts.push(
           '-c:v', 'libx264',
           '-preset', 'medium',
-          '-b:v', '2800k',
-          '-maxrate', '2800k',
-          '-bufsize', '2800k',
-          '-c:a', 'aac',
-          '-b:a', '128k'
+          ...this.getVideoBitrateOptionPairs(),
+          ...this.getAudioOptionPairs()
         );
       }
 
@@ -492,25 +541,20 @@ class VideoMixer {
             outputOpts.push(
               '-preset', 'p4',
               '-tune', 'hq',
-              '-b:v', '2800k',
-              '-maxrate', '2800k',
-              '-bufsize', '2800k',
+              ...this.getVideoBitrateOptionPairs(),
               '-bf', '2',
               '-rc-lookahead', '16'
             );
           } else {
             outputOpts.push(...encoderOpts.outputOptions.filter(opt => !opt.includes('crf') && !opt.includes('cq')));
           }
-          outputOpts.push('-c:a', 'aac', '-b:a', '128k');
+          outputOpts.push(...this.getAudioOptionPairs());
         } else {
           outputOpts.push(
             '-c:v', 'libx264',
             '-preset', 'medium',
-            '-b:v', '2800k',
-            '-maxrate', '2800k',
-            '-bufsize', '2800k',
-            '-c:a', 'aac',
-            '-b:a', '128k'
+            ...this.getVideoBitrateOptionPairs(),
+            ...this.getAudioOptionPairs()
           );
         }
 

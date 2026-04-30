@@ -625,7 +625,13 @@ class HighlightMixEditNode {
     const { VideoMixer } = require('../utils/video-mixer');
 
     const { ffmpegPath, ffprobePath } = await initializeFfmpeg();
-    const videoMixer = new VideoMixer(ffmpegPath, ffprobePath, true);
+    const videoMixer = new VideoMixer(ffmpegPath, ffprobePath, true, {
+      // 高光混剪按成品总码率不超过 3000k 控制，这里给音频和封装开销留出余量。
+      videoBitrateK: 2700,
+      videoMaxrateK: 2700,
+      videoBufsizeK: 2700,
+      audioBitrateK: 96
+    });
 
     console.log('[HighlightMixEdit] FFmpeg 路径:', ffmpegPath);
     console.log('[HighlightMixEdit] FFprobe 路径:', ffprobePath);

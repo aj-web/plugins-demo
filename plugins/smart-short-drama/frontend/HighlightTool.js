@@ -3,6 +3,7 @@ import { TaskModule, STATUS_TEXTS } from './constants.js';
 import { ReadinessPanel } from './components.js';
 import { invokeIpc, triggerEvent, unwrapIpcResponse } from './ipc.js';
 import { showToast } from './Prompt.js';
+import { TrackingEvent, TrackingPage, trackClick } from './tracking.js';
 
 const { h } = Vue;
 
@@ -305,6 +306,8 @@ export const HighlightTool = {
     
     // 开始解析并爬取剧目（仅下载原片，不进行混剪）
     const handleParseAndDownload = async () => {
+      trackClick(TrackingEvent.HIGHLIGHT_PARSE_DOWNLOAD_START, TrackingPage.HIGHLIGHT);
+
       try {
         console.log('[HighlightTool] 开始解析并爬取剧目');
 
@@ -378,21 +381,23 @@ export const HighlightTool = {
     };
 
     const handleStartTask = async () => {
+      trackClick(TrackingEvent.HIGHLIGHT_START, TrackingPage.HIGHLIGHT);
+
       try {
         console.log('[HighlightTool] 启动高光混剪任务');
 
         // 1. 检查 Excel 是否已上传
         const hasExcel = dramaListFilePath.value && dramaListFilePath.value.trim() !== '';
 
-        // 2. 检查 ReadinessPanel 数据源是否就绪（仅作提示，不强制要求）
+        // 2. 检查 ReadinessPanel 数据源是否就绪
         const dramaOriginalReady = readinessItems.value.length > 0 &&
           readinessItems.value[0].status === 'ready' &&
           readinessItems.value[0].folderPath;
 
-        // 3. 必须有 Excel 才能启动混剪任务（否则无法确定要处理哪些剧）
-        if (!hasExcel) {
+        // 3. Excel 与已就绪的短剧原片数据源二选一即可
+        if (!hasExcel && !dramaOriginalReady) {
           showToast({
-            message: '请上传剧目列表 Excel 文件',
+            message: '请上传剧目列表 Excel 文件，或先准备短剧原片数据源',
             type: 'warning',
             duration: 3000
           });
@@ -426,7 +431,7 @@ export const HighlightTool = {
         console.log('[HighlightTool] 所有验证通过，开始提交任务');
 
         // 2. 准备参数
-        const dramaListFilePathValue = dramaListFilePath.value;
+        const dramaListFilePathValue = hasExcel ? dramaListFilePath.value : '';
         const imageOverlayPath = imageOverlay.value;
         const endFrameFolderPath = localEndFrame.value;
         const outputPathValue = outputPath.value;
@@ -435,6 +440,7 @@ export const HighlightTool = {
 
         console.log('[HighlightTool] 调用后端参数:', {
           dramaListFilePath: dramaListFilePathValue,
+          useReadyOriginalData: !hasExcel && dramaOriginalReady,
           imageOverlayPath,
           endFrameFolderPath,
           outputPath: outputPathValue,
