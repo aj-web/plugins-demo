@@ -9,6 +9,8 @@ import http from 'http';
 import { pipeline } from 'stream/promises';
 import { staticServer } from './static-server';
 import { configManager } from './config';
+import { activationService } from './services/activation';
+import { eventTrackingService } from './services/event-tracking';
 
 const dynamicAllowlist = new Set<string>();
 
@@ -41,6 +43,36 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('get-ipc-allowlist', async () => {
     return Array.from(dynamicAllowlist);
+  });
+
+  ipcMain.handle('activation:get-status', async () => {
+    return { success: true, data: activationService.getStatus() };
+  });
+
+  ipcMain.handle('activation:activate', async (event, key: string) => {
+    try {
+      const result = await activationService.activate(key);
+      return { success: result.success, data: result, message: result.message };
+    } catch (error) {
+      console.error('[ipcHandlers] activation:activate error:', error);
+      return { success: false, data: null, message: error instanceof Error ? error.message : '激活失败' };
+    }
+  });
+
+  ipcMain.handle('activation:get-user-id', async () => {
+    return { success: true, data: { userId: activationService.getUserId() } };
+  });
+
+  ipcMain.handle('event-tracking:track-click', async (event, payload: { eventName: string; pageName: string }) => {
+    console.log('[ipcHandlers] event-tracking:track-click called:', payload);
+    try {
+      const result = await eventTrackingService.trackClick(payload);
+      console.log('[ipcHandlers] event-tracking:track-click result:', result);
+      return { success: result.success, data: result.data, message: result.message };
+    } catch (error) {
+      console.error('[ipcHandlers] event-tracking:track-click error:', error);
+      return { success: false, data: null, message: error instanceof Error ? error.message : '埋点上报失败' };
+    }
   });
 
   ipcMain.handle('select-file', async () => {

@@ -1,6 +1,6 @@
 {
   "name": "plugins-demo",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "description": "插件框架",
   "main": "dist-electron/main.js",
   "author": "优矩互动",

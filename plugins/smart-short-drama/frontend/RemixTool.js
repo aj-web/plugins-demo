@@ -4,6 +4,7 @@ import { ReadinessPanel } from './components.js';
 import { fetchQiancangDataWithCache } from './dataSourceUtils.js';
 import { invokeIpc, triggerEvent, unwrapIpcResponse } from './ipc.js';
 import { showToast } from './Prompt.js';
+import { TrackingEvent, TrackingPage, trackClick } from './tracking.js';
 
 const { h, ref, onMounted, watch } = Vue;
 
@@ -228,6 +229,8 @@ export const RemixTool = {
     };
 
     const handleStart = async () => {
+      trackClick(TrackingEvent.REMIX_START, TrackingPage.REMIX);
+
       try {
         console.log('[RemixTool] 启动批量混剪任务');
 

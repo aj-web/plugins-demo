@@ -1,6 +1,9 @@
 export interface ElectronAPI {
   getPluginsStatus: () => Promise<any[]>
   getPluginResourcePath: (pluginName: string) => Promise<string>
+  getActivationStatus: () => Promise<any>
+  activateClient: (key: string) => Promise<any>
+  getActivationUserId: () => Promise<any>
   checkFileExists: (filePath: string) => Promise<boolean>
   selectFile: () => Promise<string>
   selectFolder: () => Promise<string>
