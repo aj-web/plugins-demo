@@ -80,6 +80,30 @@ class VideoMixer {
     ];
   }
 
+  getNvidiaRateControlOptionStrings() {
+    return [
+      '-rc cbr',
+      `-b:v ${this.getVideoBitrate()}`,
+      `-minrate ${this.getVideoBitrate()}`,
+      `-maxrate ${this.getVideoMaxrate()}`,
+      `-bufsize ${this.getVideoBufsize()}`,
+      '-cbr 1',
+      '-strict_gop 1'
+    ];
+  }
+
+  getNvidiaRateControlOptionPairs() {
+    return [
+      '-rc', 'cbr',
+      '-b:v', this.getVideoBitrate(),
+      '-minrate', this.getVideoBitrate(),
+      '-maxrate', this.getVideoMaxrate(),
+      '-bufsize', this.getVideoBufsize(),
+      '-cbr', '1',
+      '-strict_gop', '1'
+    ];
+  }
+
   getAudioOptionStrings() {
     return [
       '-c:a aac',
@@ -92,6 +116,31 @@ class VideoMixer {
       '-c:a', 'aac',
       '-b:a', this.getAudioBitrate()
     ];
+  }
+
+  parseFrameRate(frameRateText) {
+    if (!frameRateText || frameRateText === '0/0') {
+      return null;
+    }
+
+    const parts = String(frameRateText).split('/');
+    if (parts.length === 2) {
+      const numerator = Number(parts[0]);
+      const denominator = Number(parts[1]);
+      if (Number.isFinite(numerator) && Number.isFinite(denominator) && denominator !== 0) {
+        return numerator / denominator;
+      }
+    }
+
+    const value = Number(frameRateText);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  }
+
+  formatFrameRate(frameRate) {
+    if (!Number.isFinite(frameRate) || frameRate <= 0) {
+      return null;
+    }
+    return Number(frameRate.toFixed(3)).toString();
   }
 
   /**
@@ -118,8 +167,7 @@ class VideoMixer {
               '-c:v h264_nvenc',
               '-preset p4',
               '-tune hq',
-              '-rc vbr',
-              ...this.getVideoBitrateOptionStrings(),
+              ...this.getNvidiaRateControlOptionStrings(),
               '-gpu 0',
               '-bf 3',
               '-rc-lookahead 32'
@@ -442,7 +490,7 @@ class VideoMixer {
           outputOpts.push(
             '-preset', 'p4',
             '-tune', 'hq',
-            ...this.getVideoBitrateOptionPairs(),
+            ...this.getNvidiaRateControlOptionPairs(),
             '-bf', '2',
             '-rc-lookahead', '16'
           );
@@ -490,15 +538,19 @@ class VideoMixer {
    * @param {number} targetHeight - 目标高度（默认 1280）
    * @returns {Promise<void>}
    */
-  async concatVideos(videoPaths, outputPath, tempDir, targetWidth = 720, targetHeight = 1280) {
+  async concatVideos(videoPaths, outputPath, tempDir, targetWidth = 720, targetHeight = 1280, targetFps = null) {
     return new Promise(async (resolve, reject) => {
       try {
         console.log(`[VideoMixer] 拼接 ${videoPaths.length} 个视频`);
 
         // 获取编码选项
         const encoderOpts = this.getEncoderOptions();
+        const normalizedFps = this.formatFrameRate(targetFps);
 
         console.log(`[VideoMixer] 目标分辨率: ${targetWidth}x${targetHeight}`);
+        if (normalizedFps) {
+          console.log(`[VideoMixer] 目标帧率: ${normalizedFps}fps`);
+        }
 
         // 构建 filter_complex：先缩放每个视频，再拼接
         // 格式：[v0][0:a][v1][1:a][v2][2:a]concat=n=3:v=1:a=1[outv][outa]
@@ -507,7 +559,8 @@ class VideoMixer {
         
         for (let i = 0; i < videoPaths.length; i++) {
           // 缩放每个视频到统一分辨率，并强制设置 SAR=1（正方形像素）
-          scaleFilters.push(`[${i}:v]scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=disable,format=yuv420p,setsar=1[v${i}]`);
+          const fpsFilter = normalizedFps ? `,fps=${normalizedFps}` : '';
+          scaleFilters.push(`[${i}:v]scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=disable${fpsFilter},format=yuv420p,setsar=1[v${i}]`);
           // 音频直接传递
           concatInputs.push(`[v${i}][${i}:a]`);
         }
@@ -541,7 +594,7 @@ class VideoMixer {
             outputOpts.push(
               '-preset', 'p4',
               '-tune', 'hq',
-              ...this.getVideoBitrateOptionPairs(),
+              ...this.getNvidiaRateControlOptionPairs(),
               '-bf', '2',
               '-rc-lookahead', '16'
             );
@@ -595,7 +648,8 @@ class VideoMixer {
             width: videoStream ? videoStream.width : 0,
             height: videoStream ? videoStream.height : 0,
             duration: metadata.format.duration,
-            codec: videoStream ? videoStream.codec_name : 'unknown'
+            codec: videoStream ? videoStream.codec_name : 'unknown',
+            frameRate: videoStream ? this.parseFrameRate(videoStream.avg_frame_rate || videoStream.r_frame_rate) : null
           });
         }
       });

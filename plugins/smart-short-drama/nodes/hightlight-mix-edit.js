@@ -449,9 +449,7 @@ class HighlightMixEditNode {
     
     for (const task of highlightTasks) {
       if (task.usergrowth && task.usergrowth.outputPaths) {
-        const outputPaths = Array.isArray(task.usergrowth.outputPaths) 
-          ? task.usergrowth.outputPaths 
-          : [task.usergrowth.outputPaths];
+        const outputPaths = this.normalizeOutputPaths(task.usergrowth.outputPaths);
         
         const originalCounts = task.usergrowth.originalCounts || {};
         
@@ -463,11 +461,17 @@ class HighlightMixEditNode {
           
           // 检查是否在待下载列表中
           if (dramaNames.includes(dramaName)) {
+            const availableInfo = await this.checkDramaPathAvailable(dramaPath);
+            if (!availableInfo.available) {
+              console.warn('[HighlightMixEdit] 历史剧目路径不可用，将重新下载:', dramaName, dramaPath, availableInfo.reason);
+              continue;
+            }
+
             existingDramas.set(dramaName, {
               path: dramaPath,
-              count: originalCounts[dramaName] || 0
+              count: originalCounts[dramaName] || availableInfo.videoCount
             });
-            console.log('[HighlightMixEdit] 发现已下载剧目:', dramaName, '路径:', dramaPath);
+            console.log('[HighlightMixEdit] 发现已下载剧目:', dramaName, '路径:', dramaPath, '视频数:', availableInfo.videoCount);
           }
         }
       }
@@ -481,6 +485,52 @@ class HighlightMixEditNode {
     console.log('[HighlightMixEdit] 需要新下载的剧目:', newDramas);
     
     return { existingDramas, newDramas };
+  }
+
+  /**
+   * 兼容数组和分号分隔字符串两种 outputPaths 格式
+   * @param {Array<string>|string} outputPaths - 历史任务输出路径
+   * @returns {Array<string>} 标准化后的路径数组
+   */
+  normalizeOutputPaths(outputPaths) {
+    if (Array.isArray(outputPaths)) {
+      return outputPaths.map(p => String(p || '').trim()).filter(Boolean);
+    }
+
+    if (typeof outputPaths === 'string') {
+      return outputPaths
+        .split(';')
+        .map(p => p.trim())
+        .filter(Boolean);
+    }
+
+    return [];
+  }
+
+  /**
+   * 检查历史任务里的剧目路径是否仍然可复用
+   * @param {string} dramaPath - 剧目目录路径
+   * @returns {Promise<{available: boolean, videoCount: number, reason: string}>}
+   */
+  async checkDramaPathAvailable(dramaPath) {
+    try {
+      const stat = await fs.stat(dramaPath);
+      if (!stat.isDirectory()) {
+        return { available: false, videoCount: 0, reason: '路径不是目录' };
+      }
+
+      const files = await fs.readdir(dramaPath);
+      const videoExtensions = ['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv'];
+      const videoCount = files.filter(file => videoExtensions.includes(path.extname(file).toLowerCase())).length;
+
+      if (videoCount === 0) {
+        return { available: false, videoCount: 0, reason: '目录中没有视频文件' };
+      }
+
+      return { available: true, videoCount, reason: '' };
+    } catch (error) {
+      return { available: false, videoCount: 0, reason: error.message };
+    }
   }
 
   /**
@@ -626,10 +676,10 @@ class HighlightMixEditNode {
 
     const { ffmpegPath, ffprobePath } = await initializeFfmpeg();
     const videoMixer = new VideoMixer(ffmpegPath, ffprobePath, true, {
-      // 高光混剪按成品总码率不超过 3000k 控制，这里给音频和封装开销留出余量。
-      videoBitrateK: 2700,
-      videoMaxrateK: 2700,
-      videoBufsizeK: 2700,
+      // 高光混剪按成品总码率不超过 3000k 控制，给音频、封装和短片 GOP 波动留出余量。
+      videoBitrateK: 2400,
+      videoMaxrateK: 2400,
+      videoBufsizeK: 2400,
       audioBitrateK: 96
     });
 
@@ -805,10 +855,29 @@ class HighlightMixEditNode {
    * @returns {number} 集数
    */
   extractEpisodeNumber(fileName) {
-    // 匹配文件名中的数字（假设是集数）
-    // 例如: "第1集.mp4" -> 1, "Episode_05.mp4" -> 5
-    const match = fileName.match(/(\d+)/);
-    return match ? parseInt(match[1], 10) : 0;
+    const baseName = path.basename(fileName, path.extname(fileName));
+
+    // 优先匹配下载命名：短剧名_集数.mp4，避免剧名中的数字被误认为集数。
+    const suffixMatch = baseName.match(/[_-](\d+)$/);
+    if (suffixMatch) {
+      return parseInt(suffixMatch[1], 10);
+    }
+
+    // 兼容常见集数命名：第1集、第01集。
+    const chineseEpisodeMatch = baseName.match(/第\s*(\d+)\s*集/);
+    if (chineseEpisodeMatch) {
+      return parseInt(chineseEpisodeMatch[1], 10);
+    }
+
+    // 兼容英文命名：Episode_05、EP05。
+    const englishEpisodeMatch = baseName.match(/\b(?:episode|ep)[\s_-]*(\d+)\b/i);
+    if (englishEpisodeMatch) {
+      return parseInt(englishEpisodeMatch[1], 10);
+    }
+
+    // 兜底：取最后一个数字，比取第一个数字更不容易被剧名年份干扰。
+    const allNumbers = baseName.match(/\d+/g);
+    return allNumbers ? parseInt(allNumbers[allNumbers.length - 1], 10) : 0;
   }
 
   /**
@@ -855,6 +924,10 @@ class HighlightMixEditNode {
     const duration1 = await videoMixer.getVideoDuration(episode1Path);
     console.log(`[HighlightMixEdit] 第1集时长: ${duration1}s`);
 
+    const referenceInfo = await videoMixer.getVideoInfo(episode2Path);
+    const targetFps = referenceInfo.frameRate || 30;
+    console.log(`[HighlightMixEdit] 目标帧率: ${targetFps}fps`);
+
     const startTime1 = Math.max(0, duration1 - endRetentionSeconds);
     const actualDuration1 = duration1 - startTime1;
 
@@ -872,7 +945,8 @@ class HighlightMixEditNode {
       tempConcatPath,
       tempDir,
       targetWidth,
-      targetHeight
+      targetHeight,
+      targetFps
     );
 
     let currentVideoPath = tempConcatPath;
@@ -908,7 +982,8 @@ class HighlightMixEditNode {
         outputPath,
         tempDir,
         targetWidth,
-        targetHeight
+        targetHeight,
+        targetFps
       );
     } else {
       console.log('[HighlightMixEdit] 跳过尾帧拼接（无素材）');
