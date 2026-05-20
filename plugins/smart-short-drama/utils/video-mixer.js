@@ -143,6 +143,57 @@ class VideoMixer {
     return Number(frameRate.toFixed(3)).toString();
   }
 
+  normalizeRotation(rotation) {
+    if (!Number.isFinite(rotation)) {
+      return 0;
+    }
+    return ((Math.round(rotation) % 360) + 360) % 360;
+  }
+
+  getVideoRotation(videoStream) {
+    if (!videoStream) {
+      return 0;
+    }
+
+    const tagRotation = Number.parseFloat(videoStream.tags?.rotate ?? videoStream.tags?.Rotate);
+    if (Number.isFinite(tagRotation)) {
+      return this.normalizeRotation(tagRotation);
+    }
+
+    const sideDataList = Array.isArray(videoStream.side_data_list) ? videoStream.side_data_list : [];
+    for (const sideData of sideDataList) {
+      const candidates = [
+        sideData.rotation,
+        sideData.rotation_degrees,
+        sideData.displaymatrix?.rotation
+      ];
+
+      for (const candidate of candidates) {
+        const rotation = Number.parseFloat(candidate);
+        if (Number.isFinite(rotation)) {
+          return this.normalizeRotation(rotation);
+        }
+      }
+    }
+
+    return 0;
+  }
+
+  getDisplayDimensions(width, height, rotation) {
+    const normalizedRotation = this.normalizeRotation(rotation);
+    if (normalizedRotation === 90 || normalizedRotation === 270) {
+      return {
+        displayWidth: height,
+        displayHeight: width
+      };
+    }
+
+    return {
+      displayWidth: width,
+      displayHeight: height
+    };
+  }
+
   /**
    * 检测可用的 GPU 加速类型
    * @returns {Promise<void>}
@@ -464,12 +515,12 @@ class VideoMixer {
         .loop();  // 循环图片以匹配视频时长
 
       // 使用 filter_complex 进行图片叠加
-      // 1. 将视频缩放到 720×1280
-      // 2. 将图片缩放到 720×1280 并设置透明度
+      // 1. 将视频缩放到目标分辨率
+      // 2. 将图片缩放到目标分辨率并设置透明度
       // 3. 叠加图片到视频上
       cmd.complexFilter([
-        // [0:v] 视频流，强制缩放到 720×1280，并设置像素格式
-        `[0:v]scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=disable,format=yuv420p[video_scaled]`,
+        // [0:v] 视频流，强制缩放到目标分辨率，并设置像素格式和方形像素
+        `[0:v]scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=disable,format=yuv420p,setsar=1[video_scaled]`,
         // [1:v] 图片流，强制缩放到目标分辨率（拉伸变形），并设置透明度
         `[1:v]scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=disable,format=rgba,colorchannelmixer=aa=${opacity}[image_overlay]`,
         // 叠加图片到视频上（位置 0:0，完全覆盖）
@@ -644,9 +695,16 @@ class VideoMixer {
           reject(new Error(`获取视频信息失败: ${err.message}`));
         } else {
           const videoStream = metadata.streams.find(s => s.codec_type === 'video');
+          const width = videoStream ? videoStream.width : 0;
+          const height = videoStream ? videoStream.height : 0;
+          const rotation = this.getVideoRotation(videoStream);
+          const { displayWidth, displayHeight } = this.getDisplayDimensions(width, height, rotation);
           resolve({
-            width: videoStream ? videoStream.width : 0,
-            height: videoStream ? videoStream.height : 0,
+            width,
+            height,
+            displayWidth,
+            displayHeight,
+            rotation,
             duration: metadata.format.duration,
             codec: videoStream ? videoStream.codec_name : 'unknown',
             frameRate: videoStream ? this.parseFrameRate(videoStream.avg_frame_rate || videoStream.r_frame_rate) : null

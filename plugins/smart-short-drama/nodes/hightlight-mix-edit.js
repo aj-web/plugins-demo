@@ -723,8 +723,8 @@ class HighlightMixEditNode {
 
         console.log('[HighlightMixEdit] 短剧总集数:', episodeVideos.length);
 
-        // 检测整部剧的尺寸类型（以第1集为准）
-        const aspectType = await this.detectVideoAspectType(videoMixer, episodeVideos[0].filePath);
+        // 检测整部剧的尺寸类型，兼容原片带旋转元数据或前几集横竖不一致的情况。
+        const aspectType = await this.detectDramaAspectType(videoMixer, episodeVideos);
         const { targetWidth, targetHeight } = aspectType === '竖版'
           ? { targetWidth: 720, targetHeight: 1280 }
           : { targetWidth: 1280, targetHeight: 720 };
@@ -787,6 +787,7 @@ class HighlightMixEditNode {
               targetHeight
             );
 
+            await this.assertOutputResolution(videoMixer, outputFilePath, targetWidth, targetHeight);
             totalOutputCount++;
             console.log(`[HighlightMixEdit] ✓ 混剪成功: ${outputFileName}`);
           } catch (error) {
@@ -888,9 +889,70 @@ class HighlightMixEditNode {
    */
   async detectVideoAspectType(videoMixer, videoPath) {
     const info = await videoMixer.getVideoInfo(videoPath);
-    const { width, height } = info;
-    console.log(`[HighlightMixEdit] 视频尺寸: ${width}x${height}`);
-    return width > height ? '横版' : '竖版';
+    const {
+      width,
+      height,
+      displayWidth = width,
+      displayHeight = height,
+      rotation = 0
+    } = info;
+    console.log(`[HighlightMixEdit] 视频尺寸: raw=${width}x${height}, display=${displayWidth}x${displayHeight}, rotation=${rotation}`);
+    return displayWidth > displayHeight ? '横版' : '竖版';
+  }
+
+  /**
+   * 检测整部剧的尺寸类型。
+   * 只看第一集会被异常首集或 rotate=90 的元数据误导，这里抽样前几集做多数决。
+   * @param {VideoMixer} videoMixer - 视频混剪工具
+   * @param {Array<Object>} episodeVideos - 剧集视频数组
+   * @returns {Promise<string>} '竖版' 或 '横版'
+   */
+  async detectDramaAspectType(videoMixer, episodeVideos) {
+    const sampleVideos = episodeVideos.slice(0, Math.min(5, episodeVideos.length));
+    const counts = {
+      '竖版': 0,
+      '横版': 0
+    };
+
+    for (const video of sampleVideos) {
+      const aspectType = await this.detectVideoAspectType(videoMixer, video.filePath);
+      counts[aspectType] += 1;
+      console.log(`[HighlightMixEdit] 剧集方向检测: ${video.fileName} => ${aspectType}`);
+    }
+
+    const aspectType = counts['横版'] > counts['竖版'] ? '横版' : '竖版';
+    if (counts['竖版'] > 0 && counts['横版'] > 0) {
+      console.warn(`[HighlightMixEdit] 检测到短剧前 ${sampleVideos.length} 集横竖混杂，按多数结果输出: ${aspectType}，统计: 竖版=${counts['竖版']}, 横版=${counts['横版']}`);
+    } else {
+      console.log(`[HighlightMixEdit] 短剧方向检测结果: ${aspectType}，抽样 ${sampleVideos.length} 集`);
+    }
+
+    return aspectType;
+  }
+
+  /**
+   * 校验成品分辨率，避免生成异常尺寸的素材后静默成功。
+   * @param {VideoMixer} videoMixer - 视频混剪工具
+   * @param {string} outputPath - 输出路径
+   * @param {number} targetWidth - 目标宽度
+   * @param {number} targetHeight - 目标高度
+   * @returns {Promise<void>}
+   */
+  async assertOutputResolution(videoMixer, outputPath, targetWidth, targetHeight) {
+    const info = await videoMixer.getVideoInfo(outputPath);
+    const {
+      width,
+      height,
+      displayWidth = width,
+      displayHeight = height,
+      rotation = 0
+    } = info;
+
+    console.log(`[HighlightMixEdit] 成品分辨率校验: raw=${width}x${height}, display=${displayWidth}x${displayHeight}, rotation=${rotation}, expected=${targetWidth}x${targetHeight}`);
+
+    if (width !== targetWidth || height !== targetHeight) {
+      throw new Error(`成品分辨率异常: ${width}x${height}，期望 ${targetWidth}x${targetHeight}`);
+    }
   }
 
   /**
