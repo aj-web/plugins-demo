@@ -132,7 +132,7 @@ export const AdxScraper = {
 
         const confirm = await showPrompt({
           title: '确认开始处理',
-          message: `将处理热榜前 5 部短剧，每部下载 ${processCount.value} 集\n保存路径：${outputPath.value}\n\n确定继续？`,
+          message: `将处理当前待扒产剧目清单，每部下载 ${processCount.value} 集\n保存路径：${outputPath.value}\n\n确定继续？`,
           confirmText: '开始',
           cancelText: '取消',
           showCancel: true

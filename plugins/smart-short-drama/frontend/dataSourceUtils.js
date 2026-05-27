@@ -6,6 +6,8 @@
 import { loadQiancangCache, saveQiancangCache } from './qiancangCache.js';
 import { triggerEvent, unwrapIpcResponse } from './ipc.js';
 
+const QIANCANG_DISPLAY_LIMIT = 15;
+
 /**
  * 获取所有已下载的剧名
  * @returns {Promise<Array<string>>} 已下载的剧名数组
@@ -117,7 +119,7 @@ export async function fetchQiancangDataWithCache() {
     const cache = loadQiancangCache();
 
     // 步骤3：对比剧名列表
-    if (cache && arraysEqual(newDramas, cache.rawDramas)) {
+    if (cache && cache.displayLimit === QIANCANG_DISPLAY_LIMIT && arraysEqual(newDramas, cache.rawDramas)) {
       console.log('[Qiancang] 剧目列表一致，使用缓存数据');
       return {
         success: true,
@@ -137,9 +139,9 @@ export async function fetchQiancangDataWithCache() {
     const availableDramas = newDramas.filter((name) => !downloadedDramas.includes(name));
     console.log('[Qiancang] 去重后剧目数:', availableDramas.length);
 
-    // 4.3 取前5个
-    const top5Dramas = availableDramas.slice(0, 5);
-    console.log('[Qiancang] 展示前5个:', top5Dramas);
+    // 4.3 取前 15 个
+    const topDramas = availableDramas.slice(0, QIANCANG_DISPLAY_LIMIT);
+    console.log(`[Qiancang] 展示前${QIANCANG_DISPLAY_LIMIT}个:`, topDramas);
 
     // 4.4 组装完整结果
     const now = new Date();
@@ -161,7 +163,7 @@ export async function fetchQiancangDataWithCache() {
           },
           {
             title: '待扒产剧目清单 (千仓提取)',
-            items: top5Dramas.map((title) => ({ content: title, status: 'ready' }))
+            items: topDramas.map((title) => ({ content: title, status: 'ready' }))
           }
         ]
       }
@@ -171,6 +173,7 @@ export async function fetchQiancangDataWithCache() {
     const newCache = {
       rawDramas: newDramas,
       cachedResult: result,
+      displayLimit: QIANCANG_DISPLAY_LIMIT,
       timestamp: Date.now()
     };
     saveQiancangCache(newCache);

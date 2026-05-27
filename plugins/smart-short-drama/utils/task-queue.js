@@ -119,6 +119,9 @@ class TaskQueue {
       // 3. 更新状态为"已完成"，并保存结果
       await this.updateTaskResult(task.id, '已完成', result);
 
+      // 4. 任务真正完成后触发统计上报，上报失败不影响任务状态
+      this.reportTaskComplete(task, result);
+
       console.log(`[TaskQueue] ========== 任务执行成功: ${task.id} ==========`);
     } catch (error) {
       console.error(`[TaskQueue] ========== 任务执行失败: ${task.id} ==========`, error);
@@ -202,6 +205,7 @@ class TaskQueue {
             failedDramas: [],
             fragmentCounts: {}
           };
+          task.bytegrowth.totalOutputCount = result.totalOutputCount || 0;
           task.usergrowth = result.usergrowth || {
             message: '',
             outputPaths: '',
@@ -233,7 +237,9 @@ class TaskQueue {
           // 保存简化的 result
           task.result = {
             success: result.success,
-            message: result.message
+            message: result.message,
+            totalOutputCount: result.mixResult?.totalOutputCount || 0,
+            outputPath: result.mixResult?.outputPath || ''
           };
         } else if (task.module === '爆款扒产') {
           // 爆款扒取的结果结构
@@ -259,6 +265,66 @@ class TaskQueue {
     } catch (error) {
       console.error(`[TaskQueue] 更新结果失败: ${taskId}`, error);
     }
+  }
+
+  /**
+   * 任务完成后向主进程发送统计上报消息。
+   * 注意：这里只发内部 IPC 消息，不直接请求上报接口，避免插件进程耦合激活态和 open_id。
+   */
+  reportTaskComplete(task, result) {
+    try {
+      if (!task || !result) {
+        return;
+      }
+
+      const generatedVideoCount = this.extractGeneratedVideoCount(task.module, result);
+      const payload = {
+        taskId: String(task.id || ''),
+        moduleName: task.module || '',
+        generatedVideoCount
+      };
+
+      console.log('[TaskQueue] 准备发送任务完成统计上报:', payload);
+
+      if (typeof process.send !== 'function') {
+        console.warn('[TaskQueue] 当前进程不支持 process.send，跳过任务完成统计上报');
+        return;
+      }
+
+      process.send({
+        type: 'task-complete-report',
+        payload
+      });
+    } catch (error) {
+      console.error('[TaskQueue] 发送任务完成统计上报失败:', error);
+    }
+  }
+
+  /**
+   * 从不同模块的执行结果中提取生成视频条数。
+   */
+  extractGeneratedVideoCount(module, result) {
+    if (module === '高光混剪') {
+      return Number(result.mixResult?.totalOutputCount || 0);
+    }
+
+    if (module === '爆款混剪') {
+      return Number(result.successCount || 0);
+    }
+
+    if (typeof result.totalOutputCount === 'number') {
+      return result.totalOutputCount;
+    }
+
+    if (typeof result.successCount === 'number') {
+      return result.successCount;
+    }
+
+    if (typeof result.result?.successCount === 'number') {
+      return result.result.successCount;
+    }
+
+    return 0;
   }
 
   /**

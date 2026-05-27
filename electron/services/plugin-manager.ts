@@ -2,6 +2,7 @@ import { fork } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import pathManager from '../../utils/path-manager';
+import { eventTrackingService, TrackTaskCompletePayload } from './event-tracking';
 
 export interface PluginManifest {
   name: string;
@@ -144,6 +145,10 @@ export class PluginManager {
 
     child.on('message', (msg: any) => {
       console.log('[PluginManager] startPluginProcess received message from child:', msg);
+      if (this.handlePluginAsyncMessage(pluginName, msg)) {
+        return;
+      }
+
       if (msg && msg.type === 'stopped') {
         console.log('[PluginManager] startPluginProcess plugin stopped, notifying windows');
         // 通知所有窗口插件已停止
@@ -170,14 +175,17 @@ export class PluginManager {
     console.log('[PluginManager] sendToPluginProcess called with data:', data);
 
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        console.error('[PluginManager] sendToPluginProcess timeout after 10 minutes');
-        reject(new Error('Plugin process timeout'));
-      }, 12000000);
-
-      child.once('message', (response: any) => {
+      let timeout: NodeJS.Timeout;
+      const handleResponse = (response: any) => {
         console.log('[PluginManager] sendToPluginProcess received response:', response);
+
+        if (this.isPluginAsyncMessage(response)) {
+          console.log('[PluginManager] sendToPluginProcess ignored async message:', response?.type);
+          return;
+        }
+
         clearTimeout(timeout);
+        child.off('message', handleResponse);
         if (response && response.error) {
           console.error('[PluginManager] sendToPluginProcess response has error:', response.error);
           reject(new Error(response.error));
@@ -185,11 +193,48 @@ export class PluginManager {
           console.log('[PluginManager] sendToPluginProcess resolving with response:', response);
           resolve(response);
         }
-      });
+      };
+
+      timeout = setTimeout(() => {
+        console.error('[PluginManager] sendToPluginProcess timeout after 10 minutes');
+        child.off('message', handleResponse);
+        reject(new Error('Plugin process timeout'));
+      }, 12000000);
+
+      child.on('message', handleResponse);
 
       console.log('[PluginManager] sendToPluginProcess sending data to child process');
       child.send(data);
     });
+  }
+
+  private isPluginAsyncMessage(msg: any): boolean {
+    return msg?.type === 'task-complete-report';
+  }
+
+  private handlePluginAsyncMessage(pluginName: string, msg: any): boolean {
+    if (!this.isPluginAsyncMessage(msg)) {
+      return false;
+    }
+
+    if (msg.type === 'task-complete-report') {
+      const payload = msg.payload as TrackTaskCompletePayload;
+      console.log('[PluginManager] 收到插件任务完成上报消息:', {
+        pluginName,
+        payload
+      });
+
+      eventTrackingService.trackTaskComplete(payload).catch((error) => {
+        console.error('[PluginManager] 任务完成上报失败:', {
+          pluginName,
+          payload,
+          message: error instanceof Error ? error.message : String(error)
+        });
+      });
+      return true;
+    }
+
+    return false;
   }
 
   getAvailablePlugins(): Array<{ name: string; status: string }> {

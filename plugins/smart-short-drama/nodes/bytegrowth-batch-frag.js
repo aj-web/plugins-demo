@@ -195,6 +195,8 @@ class UserGrowthBatchFragmentsNode {
       const VideoDedupService = require('./video-dedup-service');
       const dedupService = new VideoDedupService();
       const dedupResults = {}; // 记录每个剧目的去重输出路径
+      const dedupOutputCounts = {}; // 记录每个剧目的去重视频产出数量
+      let totalOutputCount = 0;
 
       // 对每个成功的剧目执行去重
       for (const dramaName of byteGrowthData.succDramas) {
@@ -213,6 +215,11 @@ class UserGrowthBatchFragmentsNode {
             if (dedupResult.success) {
               console.log(`[UserGrowthBatchFragments] 去重完成: ${dramaName} -> ${dramaDedupOutputPath}`);
               dedupResults[dramaName] = dramaDedupOutputPath;
+
+              const outputCount = this.countDedupOutputVideos(dedupResult, dramaDedupOutputPath);
+              dedupOutputCounts[dramaName] = outputCount;
+              totalOutputCount += outputCount;
+              console.log(`[UserGrowthBatchFragments] 去重产出视频数量: ${dramaName} -> ${outputCount}`);
             } else {
               console.error(`[UserGrowthBatchFragments] 去重失败: ${dramaName}, 错误: ${dedupResult.error}`);
             }
@@ -231,7 +238,8 @@ class UserGrowthBatchFragmentsNode {
           outputPaths: Object.values(dedupResults).join(';'), // 复刻片段的实际输出路径
           succDramas: byteGrowthData.succDramas, // 跑量片段下载成功的剧目
           failedDramas: byteGrowthData.failedDramas,
-          fragmentCounts: byteGrowthData.fragmentCounts || {}
+          fragmentCounts: byteGrowthData.fragmentCounts || {},
+          outputCounts: dedupOutputCounts
         },
         usergrowth: {
           message: userGrowthMessage,
@@ -239,7 +247,8 @@ class UserGrowthBatchFragmentsNode {
           succDramas: userGrowthData.succDramas,
           failedDramas: userGrowthData.failedDramas,
           originalCounts: userGrowthData.originalCounts || {}
-        }
+        },
+        totalOutputCount: totalOutputCount
       };
     };
 
@@ -261,6 +270,38 @@ class UserGrowthBatchFragmentsNode {
         success: false,
         message: `提交任务失败: ${error.message}`
       };
+    }
+  }
+
+  /**
+   * 统计复刻去重实际产出的视频数量。
+   * 优先使用去重服务返回的 restored_video，并确认文件存在；如果服务结果缺失，则兜底扫描输出目录。
+   */
+  countDedupOutputVideos(dedupResult, outputPath) {
+    const fs = require('fs');
+    const path = require('path');
+
+    try {
+      const restoredVideos = Array.isArray(dedupResult?.analyze?.results)
+        ? dedupResult.analyze.results
+            .map((item) => item?.result?.restored_video)
+            .filter((videoPath) => videoPath && fs.existsSync(videoPath))
+        : [];
+
+      if (restoredVideos.length > 0) {
+        return restoredVideos.length;
+      }
+
+      if (!outputPath || !fs.existsSync(outputPath)) {
+        return 0;
+      }
+
+      return fs
+        .readdirSync(outputPath)
+        .filter((file) => path.extname(file).toLowerCase() === '.mp4').length;
+    } catch (error) {
+      console.warn('[UserGrowthBatchFragments] 统计复刻产出视频数量失败:', error.message);
+      return 0;
     }
   }
 

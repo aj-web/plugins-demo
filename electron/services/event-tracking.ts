@@ -6,16 +6,32 @@ const EVENT_TRACKING_API_URL = 'https://scriptv2.qfei.cn/api/client/event_tracki
 const CLIENT_TYPE = 'smart-short-drama'
 const DEFAULT_OS = 'Windows'
 const DEFAULT_EVENT_TYPE = 'click'
+const DRAMA_OUTPUT_EVENT_NAME = 'drama_output'
+const TASK_COMPLETE_REPORT_CONCURRENCY = 5
 
 export interface TrackClickPayload {
   eventName: string
   pageName: string
 }
 
+export interface TrackTaskCompletePayload {
+  taskId: string
+  moduleName: string
+  generatedVideoCount?: number
+  pageName?: string
+}
+
 interface EventTrackingResponse {
   code?: number
   data?: unknown
   message?: string
+}
+
+const TASK_COMPLETE_EVENT_MAP: Record<string, { eventName: string; pageName: string }> = {
+  爆款扒产: { eventName: DRAMA_OUTPUT_EVENT_NAME, pageName: 'adx_scraper' },
+  爆款复刻: { eventName: DRAMA_OUTPUT_EVENT_NAME, pageName: 'replication' },
+  爆款混剪: { eventName: DRAMA_OUTPUT_EVENT_NAME, pageName: 'remix' },
+  高光混剪: { eventName: DRAMA_OUTPUT_EVENT_NAME, pageName: 'highlight' }
 }
 
 class EventTrackingService {
@@ -27,18 +43,11 @@ class EventTrackingService {
       return { success: false, message: '缺少埋点事件名称或页面名称' }
     }
 
-    const body = {
-      uuid: randomUUID(),
-      os: DEFAULT_OS,
-      client_type: CLIENT_TYPE,
-      customized_id: '',
-      customized_type: '',
-      event_type: DEFAULT_EVENT_TYPE,
-      event_time: 0,
-      event_name: eventName,
-      page_name: pageName,
-      client_time: Date.now()
-    }
+    const body = this.createBaseEventBody({
+      eventType: DEFAULT_EVENT_TYPE,
+      eventName,
+      pageName
+    })
 
     console.log('[EventTracking] 准备上报点击事件:', {
       eventName,
@@ -58,6 +67,152 @@ class EventTrackingService {
       success: response.code === undefined || response.code === 0,
       data: response,
       message: response.message || '上报完成'
+    }
+  }
+
+  async trackTaskComplete(payload: TrackTaskCompletePayload): Promise<{ success: boolean; data?: EventTrackingResponse; message: string }> {
+    const taskId = (payload?.taskId || '').trim()
+    const moduleName = (payload?.moduleName || '').trim()
+
+    if (!taskId || !moduleName) {
+      return { success: false, message: '缺少任务 ID 或任务模块名称' }
+    }
+
+    const eventConfig = TASK_COMPLETE_EVENT_MAP[moduleName] || {
+      eventName: DRAMA_OUTPUT_EVENT_NAME,
+      pageName: 'unknown'
+    }
+    const eventName = eventConfig.eventName
+    const pageName = (payload?.pageName || eventConfig.pageName).trim()
+    const generatedVideoCount = Math.max(0, Math.floor(Number.isFinite(payload.generatedVideoCount) ? Number(payload.generatedVideoCount) : 0))
+
+    if (generatedVideoCount === 0) {
+      console.log('[EventTracking] 任务无视频产出，跳过 drama_output 上报:', {
+        taskId,
+        moduleName,
+        pageName
+      })
+      return {
+        success: true,
+        data: {
+          code: 0,
+          message: '任务无视频产出，跳过上报'
+        },
+        message: '任务无视频产出，跳过上报'
+      }
+    }
+
+    console.log('[EventTracking] 准备上报任务完成事件:', {
+      taskId,
+      moduleName,
+      eventName,
+      pageName,
+      generatedVideoCount
+    })
+
+    const reportResults = await this.postRepeatedOutputEvents({
+      count: generatedVideoCount,
+      eventName,
+      pageName,
+      taskId,
+      moduleName
+    })
+
+    const failedCount = reportResults.filter((result) => !result.success).length
+    const successCount = reportResults.length - failedCount
+
+    console.log('[EventTracking] 任务产出物埋点上报完成:', {
+      taskId,
+      moduleName,
+      generatedVideoCount,
+      successCount,
+      failedCount
+    })
+
+    return {
+      success: failedCount === 0,
+      data: {
+        code: failedCount === 0 ? 0 : -1,
+        data: {
+          total: generatedVideoCount,
+          successCount,
+          failedCount
+        },
+        message: failedCount === 0 ? '任务产出物上报完成' : `任务产出物上报部分失败: ${failedCount}/${generatedVideoCount}`
+      },
+      message: failedCount === 0 ? '任务产出物上报完成' : `任务产出物上报部分失败: ${failedCount}/${generatedVideoCount}`
+    }
+  }
+
+  private async postRepeatedOutputEvents(options: {
+    count: number
+    eventName: string
+    pageName: string
+    taskId: string
+    moduleName: string
+  }): Promise<Array<{ success: boolean; response?: EventTrackingResponse; error?: string }>> {
+    const results: Array<{ success: boolean; response?: EventTrackingResponse; error?: string }> = []
+    let nextIndex = 0
+
+    const worker = async () => {
+      while (nextIndex < options.count) {
+        const currentIndex = nextIndex++
+        const body = this.createBaseEventBody({
+          eventType: DEFAULT_EVENT_TYPE,
+          eventName: options.eventName,
+          pageName: options.pageName
+        })
+
+        console.log('[EventTracking] 上报产出物事件:', {
+          taskId: options.taskId,
+          moduleName: options.moduleName,
+          index: currentIndex + 1,
+          total: options.count,
+          eventName: options.eventName,
+          pageName: options.pageName,
+          uuid: body.uuid,
+          clientTime: body.client_time
+        })
+
+        try {
+          const response = await this.postEvent(body)
+          results[currentIndex] = {
+            success: response.code === undefined || response.code === 0,
+            response
+          }
+        } catch (error) {
+          results[currentIndex] = {
+            success: false,
+            error: error instanceof Error ? error.message : String(error)
+          }
+        }
+      }
+    }
+
+    const workerCount = Math.min(TASK_COMPLETE_REPORT_CONCURRENCY, options.count)
+    await Promise.all(Array.from({ length: workerCount }, () => worker()))
+
+    return results
+  }
+
+  private createBaseEventBody(options: {
+    eventType: string
+    eventName: string
+    pageName: string
+    customizedId?: string
+    customizedType?: string
+  }): Record<string, unknown> {
+    return {
+      uuid: randomUUID(),
+      os: DEFAULT_OS,
+      client_type: CLIENT_TYPE,
+      customized_id: options.customizedId || '',
+      customized_type: options.customizedType || '',
+      event_type: options.eventType,
+      event_time: 0,
+      event_name: options.eventName,
+      page_name: options.pageName,
+      client_time: Date.now()
     }
   }
 
