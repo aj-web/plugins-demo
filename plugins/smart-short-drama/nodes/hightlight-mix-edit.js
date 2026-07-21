@@ -81,14 +81,11 @@ class HighlightMixEditNode {
       const executor = async (params) => {
         console.log('[HighlightMixEdit] ========== 开始执行仅下载任务 ==========');
 
-        // 步骤2: 获取剧目列表（互斥二选一）
-        //   有 Excel → 只用 Excel 剧名（不合并历史任务）
-        //   无 Excel → 用最近已完成的高光混剪/爆款复刻任务剧名
+        // 步骤2: 获取剧目列表。仅下载模式也只使用 Excel 剧名。
         console.log('[HighlightMixEdit] 步骤2: 获取剧目列表...');
         let dramaNames = [];
 
         if (params.dramaListFilePath && params.dramaListFilePath.trim() !== '') {
-          // 2A: 有 Excel，只解析 Excel
           console.log('[HighlightMixEdit] 检测到 Excel 文件，解析剧目列表...');
           const dramaListResult = await this.parseDramaListExcel(params.dramaListFilePath);
           if (dramaListResult.success && dramaListResult.dramaNames.length > 0) {
@@ -98,23 +95,11 @@ class HighlightMixEditNode {
             throw new Error('Excel 解析失败或剧目列表为空');
           }
         } else {
-          // 2B: 无 Excel，读取最近已完成任务的剧名
-          console.log('[HighlightMixEdit] 未提供 Excel，从最近任务获取剧目列表...');
-          const latestTask = await this.getLatestCompletedTask();
-          if (latestTask && latestTask.usergrowth && latestTask.usergrowth.outputPaths) {
-            const paths = Array.isArray(latestTask.usergrowth.outputPaths)
-              ? latestTask.usergrowth.outputPaths
-              : latestTask.usergrowth.outputPaths.split(';').map(p => p.trim()).filter(Boolean);
-            dramaNames = paths.map(p => path.basename(p)).filter(name => name);
-            console.log('[HighlightMixEdit] 从最近任务提取到剧目:', dramaNames.length, '个');
-          }
-          if (dramaNames.length === 0) {
-            throw new Error('未提供 Excel，且最近任务中没有可用的短剧原片，请上传剧目列表 Excel');
-          }
+          throw new Error('请上传剧目列表 Excel');
         }
 
         if (dramaNames.length === 0) {
-          throw new Error('无法获取剧目列表，请上传 Excel 或确保已有成功任务');
+          throw new Error('无法获取剧目列表，请上传有效的 Excel');
         }
         console.log('[HighlightMixEdit] 最终剧目列表:', dramaNames);
 
@@ -130,6 +115,12 @@ class HighlightMixEditNode {
           throw new Error('没有成功下载任何短剧原片');
         }
 
+        if (downloadResult.outputPaths.length < dramaNames.length) {
+          const availableNames = new Set(downloadResult.outputPaths.map((dramaPath) => path.basename(dramaPath)));
+          const missingDramas = dramaNames.filter((name) => !availableNames.has(name));
+          throw new Error(`部分剧目原片处理失败。失败剧目: ${missingDramas.join('、')}`);
+        }
+
         console.log('[HighlightMixEdit] ========== 仅下载任务执行完成 ==========');
 
         // 返回结果（只包含 usergrowth 字段，不包含 mixResult）
@@ -139,7 +130,8 @@ class HighlightMixEditNode {
           usergrowth: {
             message: '短剧原片处理完成',
             outputPaths: downloadResult.outputPaths,
-            originalCounts: downloadResult.originalCounts
+            originalCounts: downloadResult.originalCounts,
+            failedDramas: downloadResult.failedDramas || []
           }
         };
       };
@@ -178,6 +170,7 @@ class HighlightMixEditNode {
    * @param {string} outputPath - 成品存储路径
    * @param {number} endRetentionSeconds - 混剪末尾保留秒数
    * @param {boolean} isScheduledTask - 是否为定时任务
+   * @param {number} stitchEpisodeCount - 每条成品拼接的集数（1/2/3）
    * @returns {Promise<Object>} 处理结果
    */
   async autoStartProcessing(
@@ -186,7 +179,8 @@ class HighlightMixEditNode {
     endFrameFolderPath,
     outputPath,
     endRetentionSeconds = 10,
-    isScheduledTask = false
+    isScheduledTask = false,
+    stitchEpisodeCount = 3
   ) {
     console.log('[HighlightMixEdit] ========== autoStartProcessing 开始执行 ==========');
     console.log('[HighlightMixEdit] 接收到的参数:');
@@ -195,6 +189,7 @@ class HighlightMixEditNode {
     console.log('[HighlightMixEdit]   (3) 尾帧选择的路径:', endFrameFolderPath);
     console.log('[HighlightMixEdit]   (4) 成品存储的路径:', outputPath);
     console.log('[HighlightMixEdit]   (5) 混剪末尾保留秒数:', endRetentionSeconds);
+    console.log('[HighlightMixEdit]   (6) 拼接集数:', stitchEpisodeCount);
     console.log('[HighlightMixEdit]   是否为定时任务:', isScheduledTask);
     console.log('[HighlightMixEdit] ================================================');
 
@@ -228,7 +223,8 @@ class HighlightMixEditNode {
         endFrameFolderPath,
         outputPath,
         endRetentionSeconds,
-        isScheduledTask
+        isScheduledTask,
+        stitchEpisodeCount
       }
     };
 
@@ -240,14 +236,11 @@ class HighlightMixEditNode {
       console.log('[HighlightMixEdit] 步骤1: 验证参数...');
       await this.validateParams(params);
 
-      // 步骤2: 获取剧目列表（互斥二选一）
-      //   有 Excel → 只用 Excel 剧名（不合并历史任务）
-      //   无 Excel → 用最近已完成的高光混剪/爆款复刻任务剧名
+      // 步骤2: 获取剧目列表。高光混剪启动批量任务只使用 Excel 剧名。
       console.log('[HighlightMixEdit] 步骤2: 获取剧目列表...');
       let dramaNames = [];
 
       if (params.dramaListFilePath && params.dramaListFilePath.trim() !== '') {
-        // 2A: 有 Excel，只解析 Excel
         console.log('[HighlightMixEdit] 检测到 Excel 文件，解析剧目列表...');
         const dramaListResult = await this.parseDramaListExcel(params.dramaListFilePath);
         if (dramaListResult.success && dramaListResult.dramaNames.length > 0) {
@@ -257,23 +250,11 @@ class HighlightMixEditNode {
           throw new Error('Excel 解析失败或剧目列表为空');
         }
       } else {
-        // 2B: 无 Excel，读取最近已完成任务的剧名
-        console.log('[HighlightMixEdit] 未提供 Excel，从最近任务获取剧目列表...');
-        const latestTask = await this.getLatestCompletedTask();
-        if (latestTask && latestTask.usergrowth && latestTask.usergrowth.outputPaths) {
-          const paths = Array.isArray(latestTask.usergrowth.outputPaths)
-            ? latestTask.usergrowth.outputPaths
-            : latestTask.usergrowth.outputPaths.split(';').map(p => p.trim()).filter(Boolean);
-          dramaNames = paths.map(p => path.basename(p)).filter(name => name);
-          console.log('[HighlightMixEdit] 从最近任务提取到剧目:', dramaNames.length, '个');
-        }
-        if (dramaNames.length === 0) {
-          throw new Error('未提供 Excel，且最近任务中没有可用的短剧原片，请上传剧目列表 Excel');
-        }
+        throw new Error('请上传剧目列表 Excel');
       }
 
       if (dramaNames.length === 0) {
-        throw new Error('无法获取剧目列表，请上传 Excel 或确保已有成功任务');
+        throw new Error('无法获取剧目列表，请上传有效的 Excel');
       }
       console.log('[HighlightMixEdit] 最终剧目列表:', dramaNames);
 
@@ -287,6 +268,12 @@ class HighlightMixEditNode {
 
       if (downloadResult.outputPaths.length === 0) {
         throw new Error('没有可用的短剧原片，无法继续执行');
+      }
+
+      if (downloadResult.outputPaths.length < dramaNames.length) {
+        const availableNames = new Set(downloadResult.outputPaths.map((dramaPath) => path.basename(dramaPath)));
+        const missingDramas = dramaNames.filter((name) => !availableNames.has(name));
+        throw new Error(`部分剧目原片处理失败，已停止混剪。失败剧目: ${missingDramas.join('、')}`);
       }
 
       // 步骤4: 按尺寸扫描图片叠加文件夹（竖版/横版子目录）
@@ -310,8 +297,17 @@ class HighlightMixEditNode {
         overlayImagesByType,
         endFrameVideosByType,
         params.outputPath,
-        params.endRetentionSeconds
+        params.endRetentionSeconds,
+        params.stitchEpisodeCount
       );
+
+      if (mixResult.failedDramas && mixResult.failedDramas.length > 0) {
+        throw new Error(`部分剧目混剪失败，已生成 ${mixResult.totalOutputCount} 个成品。失败剧目: ${mixResult.failedDramas.join('、')}`);
+      }
+
+      if (mixResult.totalOutputCount === 0) {
+        throw new Error('未生成任何高光混剪成品');
+      }
       
       console.log('[HighlightMixEdit] ========== 任务执行完成 ==========');
       console.log('[HighlightMixEdit] 总计产出物数量:', mixResult.totalOutputCount);
@@ -323,7 +319,8 @@ class HighlightMixEditNode {
         usergrowth: {
           message: '短剧原片处理完成',
           outputPaths: downloadResult.outputPaths,
-          originalCounts: downloadResult.originalCounts
+          originalCounts: downloadResult.originalCounts,
+          failedDramas: downloadResult.failedDramas || []
         },
         mixResult: {
           outputPath: mixResult.outputPath,
@@ -360,7 +357,11 @@ class HighlightMixEditNode {
   async validateParams(params) {
     console.log('[HighlightMixEdit] 开始验证参数...');
 
-    const { endFrameFolderPath, outputPath } = params;
+    const { dramaListFilePath, endFrameFolderPath, outputPath } = params;
+
+    if (!dramaListFilePath || String(dramaListFilePath).trim() === '') {
+      throw new Error('剧目列表 Excel 不能为空');
+    }
 
     if (!endFrameFolderPath) {
       throw new Error('尾帧文件夹路径不能为空');
@@ -370,11 +371,40 @@ class HighlightMixEditNode {
       throw new Error('成品存储路径不能为空');
     }
 
+    const stitchEpisodeCount = Number(params.stitchEpisodeCount || 3);
+    if (![1, 2, 3].includes(stitchEpisodeCount)) {
+      throw new Error('拼接集数只能是 1、2、3');
+    }
+
     console.log('[HighlightMixEdit] 参数验证通过');
   }
 
+  getOriginalSourceFromTask(task) {
+    if (!task) return null;
+    if (task.module === '爆款复刻') {
+      return task.materials?.originals?.mogong || null;
+    }
+    if (task.module === '高光混剪') {
+      return task.usergrowth || null;
+    }
+    return null;
+  }
+
+  getOriginalOutputPathsFromTask(task) {
+    const source = this.getOriginalSourceFromTask(task);
+    return this.normalizeOutputPaths(source?.outputPaths);
+  }
+
+  getOriginalCountsFromTask(task) {
+    const source = this.getOriginalSourceFromTask(task);
+    if (task?.module === '爆款复刻') {
+      return source?.episodeCounts || {};
+    }
+    return source?.originalCounts || {};
+  }
+
   /**
-   * 获取最近已完成的高光混剪/爆款复刻任务（状态为"已完成"且有 outputPaths）
+   * 获取最近已完成的高光混剪/爆款复刻任务（状态为"已完成"且有短剧原片 outputPaths）
    * @returns {Promise<Object|null>}
    */
   async getLatestCompletedTask() {
@@ -387,8 +417,7 @@ class HighlightMixEditNode {
       .filter(task =>
         (task.module === '高光混剪' || task.module === '爆款复刻') &&
         task.status === '已完成' &&
-        task.usergrowth &&
-        task.usergrowth.outputPaths
+        this.getOriginalOutputPathsFromTask(task).length > 0
       )
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
@@ -448,10 +477,9 @@ class HighlightMixEditNode {
     const existingDramas = new Map();
     
     for (const task of highlightTasks) {
-      if (task.usergrowth && task.usergrowth.outputPaths) {
-        const outputPaths = this.normalizeOutputPaths(task.usergrowth.outputPaths);
-        
-        const originalCounts = task.usergrowth.originalCounts || {};
+      const outputPaths = this.getOriginalOutputPathsFromTask(task);
+      if (outputPaths.length > 0) {
+        const originalCounts = this.getOriginalCountsFromTask(task);
         
         for (const dramaPath of outputPaths) {
           if (!dramaPath) continue;
@@ -551,6 +579,7 @@ class HighlightMixEditNode {
       // 初始化结果
       const outputPaths = [];
       const originalCounts = {};
+      const failedDramas = [];
       
       // 步骤2: 复用已下载的剧目
       for (const [dramaName, info] of existingDramas.entries()) {
@@ -563,10 +592,10 @@ class HighlightMixEditNode {
       if (newDramas.length > 0) {
         console.log('[HighlightMixEdit] 开始下载新剧目...');
         
-        // 生成带日期的输出路径: baseOutputPath\短剧原片\2026-02-03
+        // 生成带日期和平台的输出路径: baseOutputPath\短剧原片\2026-02-03\墨攻
         const now = new Date();
         const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-        const newDownloadPath = path.join(baseOutputPath, '短剧原片', dateStr);
+        const newDownloadPath = path.join(baseOutputPath, '短剧原片', dateStr, '墨攻');
         
         console.log('[HighlightMixEdit] 新剧目下载路径:', newDownloadPath);
         
@@ -583,6 +612,7 @@ class HighlightMixEditNode {
         console.log('[HighlightMixEdit] 新剧目下载完成');
         console.log('[HighlightMixEdit] 成功:', result.succDramas.length, '个');
         console.log('[HighlightMixEdit] 失败:', result.failedDramas.length, '个');
+        failedDramas.push(...(result.failedDramas || []));
         
         // 合并新下载的结果
         for (const dramaName of result.succDramas) {
@@ -598,7 +628,8 @@ class HighlightMixEditNode {
       
       return {
         outputPaths: outputPaths,
-        originalCounts: originalCounts
+        originalCounts: originalCounts,
+        failedDramas: failedDramas
       };
     } catch (error) {
       console.error('[HighlightMixEdit] 处理短剧原片时发生异常:', error);
@@ -662,14 +693,17 @@ class HighlightMixEditNode {
    * @param {Object} endFrameVideosByType - 按尺寸分组的尾帧 { 竖版: [], 横版: [] }
    * @param {string} baseOutputPath - 基础输出路径
    * @param {number} endRetentionSeconds - 混剪末尾保留秒数
+   * @param {number} stitchEpisodeCount - 每条成品拼接的集数（1/2/3）
    * @returns {Promise<Object>} 混剪结果
    */
-  async processMixing(dramaOutputPaths, overlayImagesByType, endFrameVideosByType, baseOutputPath, endRetentionSeconds) {
+  async processMixing(dramaOutputPaths, overlayImagesByType, endFrameVideosByType, baseOutputPath, endRetentionSeconds, stitchEpisodeCount = 3) {
+    stitchEpisodeCount = Number(stitchEpisodeCount || 3);
     console.log('[HighlightMixEdit] 开始混剪处理...');
     console.log('[HighlightMixEdit] 短剧数量:', dramaOutputPaths.length);
     console.log('[HighlightMixEdit] 竖版图片:', overlayImagesByType['竖版'].length, '横版图片:', overlayImagesByType['横版'].length);
     console.log('[HighlightMixEdit] 竖版尾帧:', endFrameVideosByType['竖版'].length, '横版尾帧:', endFrameVideosByType['横版'].length);
     console.log('[HighlightMixEdit] 保留秒数:', endRetentionSeconds);
+    console.log('[HighlightMixEdit] 拼接集数:', stitchEpisodeCount);
 
     const { initializeFfmpeg } = require('../utils/ffmpeg-locator');
     const { VideoMixer } = require('../utils/video-mixer');
@@ -706,6 +740,7 @@ class HighlightMixEditNode {
     await fs.mkdir(tempDir, { recursive: true });
 
     let totalOutputCount = 0;
+    const failedDramas = [];
 
     for (const dramaPath of dramaOutputPaths) {
       const dramaName = path.basename(dramaPath);
@@ -716,8 +751,9 @@ class HighlightMixEditNode {
       try {
         const episodeVideos = await this.scanDramaVideos(dramaPath);
 
-        if (episodeVideos.length < 3) {
-          console.warn(`[HighlightMixEdit] 短剧 ${dramaName} 集数不足 3 集，跳过`);
+        if (episodeVideos.length < stitchEpisodeCount) {
+          console.warn(`[HighlightMixEdit] 短剧 ${dramaName} 集数不足 ${stitchEpisodeCount} 集，跳过`);
+          failedDramas.push(dramaName);
           continue;
         }
 
@@ -733,7 +769,7 @@ class HighlightMixEditNode {
         const dramaOutputPath = path.join(mixedOutputBasePath, dramaName);
         await fs.mkdir(dramaOutputPath, { recursive: true });
 
-        const outputCount = episodeVideos.length - 2;
+        const outputCount = episodeVideos.length - stitchEpisodeCount + 1;
         console.log('[HighlightMixEdit] 预计产出物数量:', outputCount);
 
         // 按尺寸取对应素材（找不到则为空数组）
@@ -753,31 +789,29 @@ class HighlightMixEditNode {
           console.log(`[HighlightMixEdit] ${aspectType} 尾帧文件夹为空或不存在，跳过尾帧拼接`);
         }
 
+        let dramaOutputCount = 0;
+
         for (let i = 0; i < outputCount; i++) {
-          const episode1 = episodeVideos[i];
-          const episode2 = episodeVideos[i + 1];
-          const episode3 = episodeVideos[i + 2];
-
-          const episodeNum1 = this.extractEpisodeNumber(episode1.fileName);
-          const episodeNum2 = this.extractEpisodeNumber(episode2.fileName);
-          const episodeNum3 = this.extractEpisodeNumber(episode3.fileName);
-
-          const outputFileName = `第${episodeNum1}-${episodeNum3}集${endRetentionSeconds}s混剪.mp4`;
+          const selectedEpisodes = episodeVideos.slice(i, i + stitchEpisodeCount);
+          const episodeNum1 = this.extractEpisodeNumber(selectedEpisodes[0].fileName);
+          const episodeNumEnd = this.extractEpisodeNumber(selectedEpisodes[selectedEpisodes.length - 1].fileName);
+          const outputFileName = stitchEpisodeCount === 1
+            ? `第${episodeNum1}集${endRetentionSeconds}s混剪.mp4`
+            : `第${episodeNum1}-${episodeNumEnd}集${endRetentionSeconds}s混剪.mp4`;
           const outputFilePath = path.join(dramaOutputPath, outputFileName);
 
           console.log(`[HighlightMixEdit] -------------------- 混剪 ${i + 1}/${outputCount} --------------------`);
-          console.log(`[HighlightMixEdit] 第1集: ${episode1.fileName} (截取末尾 ${endRetentionSeconds}s)`);
-          console.log(`[HighlightMixEdit] 第2集: ${episode2.fileName} (完整)`);
-          console.log(`[HighlightMixEdit] 第3集: ${episode3.fileName} (完整)`);
+          selectedEpisodes.forEach((episode, index) => {
+            const mode = index === 0 ? `截取末尾 ${endRetentionSeconds}s` : '完整';
+            console.log(`[HighlightMixEdit] 第${index + 1}段: ${episode.fileName} (${mode})`);
+          });
           console.log(`[HighlightMixEdit] 输出: ${outputFileName}`);
           console.log(`[HighlightMixEdit] 尺寸类型: ${aspectType} (${targetWidth}x${targetHeight})`);
 
           try {
-            await this.mixThreeEpisodes(
+            await this.mixEpisodes(
               videoMixer,
-              episode1.filePath,
-              episode2.filePath,
-              episode3.filePath,
+              selectedEpisodes.map((episode) => episode.filePath),
               overlayImages,
               endFrameVideos,
               outputFilePath,
@@ -789,15 +823,21 @@ class HighlightMixEditNode {
 
             await this.assertOutputResolution(videoMixer, outputFilePath, targetWidth, targetHeight);
             totalOutputCount++;
+            dramaOutputCount++;
             console.log(`[HighlightMixEdit] ✓ 混剪成功: ${outputFileName}`);
           } catch (error) {
             console.error(`[HighlightMixEdit] ✗ 混剪失败: ${outputFileName}`, error.message);
           }
         }
 
+        if (dramaOutputCount === 0) {
+          failedDramas.push(dramaName);
+        }
+
         console.log('[HighlightMixEdit] 短剧处理完成:', dramaName);
       } catch (error) {
         console.error(`[HighlightMixEdit] 处理短剧失败: ${dramaName}`, error.message);
+        failedDramas.push(dramaName);
       }
     }
 
@@ -813,7 +853,8 @@ class HighlightMixEditNode {
 
     return {
       totalOutputCount: totalOutputCount,
-      outputPath: mixedOutputBasePath
+      outputPath: mixedOutputBasePath,
+      failedDramas: Array.from(new Set(failedDramas))
     };
   }
 
@@ -956,11 +997,9 @@ class HighlightMixEditNode {
   }
 
   /**
-   * 混剪三集视频（含图片叠加 + 尾帧拼接，按尺寸统一输出分辨率）
+   * 混剪指定集数视频（含图片叠加 + 尾帧拼接，按尺寸统一输出分辨率）
    * @param {VideoMixer} videoMixer - 视频混剪工具
-   * @param {string} episode1Path - 第1集路径
-   * @param {string} episode2Path - 第2集路径
-   * @param {string} episode3Path - 第3集路径
+   * @param {Array<string>} episodePaths - 剧集路径，第1集截取末尾，其余完整拼接
    * @param {Array<string>} overlayImages - 叠加图片数组（按尺寸类型，可能为空）
    * @param {Array<string>} endFrameVideos - 尾帧视频数组（按尺寸类型，可能为空）
    * @param {string} outputPath - 输出路径
@@ -970,11 +1009,9 @@ class HighlightMixEditNode {
    * @param {number} targetHeight - 目标高度（1280 或 720）
    * @returns {Promise<void>}
    */
-  async mixThreeEpisodes(
+  async mixEpisodes(
     videoMixer,
-    episode1Path,
-    episode2Path,
-    episode3Path,
+    episodePaths,
     overlayImages,
     endFrameVideos,
     outputPath,
@@ -983,10 +1020,15 @@ class HighlightMixEditNode {
     targetWidth,
     targetHeight
   ) {
+    if (!Array.isArray(episodePaths) || episodePaths.length === 0) {
+      throw new Error('没有可混剪的剧集视频');
+    }
+
+    const episode1Path = episodePaths[0];
     const duration1 = await videoMixer.getVideoDuration(episode1Path);
     console.log(`[HighlightMixEdit] 第1集时长: ${duration1}s`);
 
-    const referenceInfo = await videoMixer.getVideoInfo(episode2Path);
+    const referenceInfo = await videoMixer.getVideoInfo(episodePaths[1] || episode1Path);
     const targetFps = referenceInfo.frameRate || 30;
     console.log(`[HighlightMixEdit] 目标帧率: ${targetFps}fps`);
 
@@ -999,11 +1041,12 @@ class HighlightMixEditNode {
     const tempEpisode1Path = path.join(tempDir, `episode1_trimmed_${Date.now()}.mp4`);
     await videoMixer.trimVideo(episode1Path, tempEpisode1Path, startTime1, actualDuration1);
 
-    // 2. 拼接三集视频：第1集末尾 + 第2集完整 + 第3集完整（统一目标分辨率）
+    // 2. 拼接视频：第1集末尾 + 后续完整剧集（统一目标分辨率）
     const tempConcatPath = path.join(tempDir, `concat_${Date.now()}.mp4`);
-    console.log('[HighlightMixEdit] 开始拼接 3 集视频...');
+    const concatInputPaths = [tempEpisode1Path, ...episodePaths.slice(1)];
+    console.log(`[HighlightMixEdit] 开始拼接 ${concatInputPaths.length} 段视频...`);
     await videoMixer.concatVideos(
-      [tempEpisode1Path, episode2Path, episode3Path],
+      concatInputPaths,
       tempConcatPath,
       tempDir,
       targetWidth,

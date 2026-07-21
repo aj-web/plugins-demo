@@ -28,6 +28,11 @@ class TaskDataManager {
       if (fs.existsSync(this.filePath)) {
         console.log('[TaskDataManager] 读取任务数据:', this.filePath);
         const content = fs.readFileSync(this.filePath, 'utf-8');
+        if (!content.trim()) {
+          console.warn('[TaskDataManager] 任务数据文件为空，返回空数据');
+          return { version: '1.0', tasks: [] };
+        }
+
         return JSON.parse(content);
       }
 

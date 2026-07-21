@@ -21,6 +21,7 @@ class UserGrowthShortFilmNode {
     this.context = null;
     this.page = null;
     this.capturedRequests = []; // 存储捕获的网络请求
+    this.lastCapturedVideoUrl = '';
 
     // UserGrowth URLs
     this.baseUrl = 'https://usergrowth.com.cn/';
@@ -334,7 +335,7 @@ class UserGrowthShortFilmNode {
 
     // 步骤3: 启动网络监听
     console.log('[UserGrowthShortFilm] 启动全局网络监听...');
-    this.capturedRequests = [];
+    this.resetCapturedVideoRequests();
     await this.setupNetworkMonitoring();
 
     // 步骤4: 点击第一个搜索结果的"查看详情"
@@ -927,9 +928,6 @@ class UserGrowthShortFilmNode {
           }
           capturedTitles.add(episode.title);
           
-          // 记录点击前的请求数
-          const beforeCount = this.capturedRequests.length;
-          
           // 点击左侧剧集获取视频链接
           await this.page.evaluate((index) => {
             const labels = document.querySelectorAll('label.arco-radio');
@@ -940,6 +938,8 @@ class UserGrowthShortFilmNode {
           
           console.log(`[UserGrowthShortFilm] 已点击左侧剧集: ${episode.title}`);
           await new Promise((resolve) => setTimeout(resolve, 1500));
+
+          this.resetCapturedVideoRequests();
           
           // 点击右侧卡片触发视频加载
           const cardClicked = await this.page.evaluate(() => {
@@ -965,7 +965,7 @@ class UserGrowthShortFilmNode {
           while (Date.now() - startTime < timeout) {
             await new Promise((resolve) => setTimeout(resolve, checkInterval));
             const afterCount = this.capturedRequests.length;
-            const newUrls = this.capturedRequests.slice(beforeCount, afterCount);
+            const newUrls = this.capturedRequests.slice(0, afterCount);
             
             if (newUrls.length > 0) {
               capturedUrl = newUrls[0];
@@ -1110,9 +1110,6 @@ class UserGrowthShortFilmNode {
           }
 
           try {
-            // 记录请求数
-            const beforeCount = this.capturedRequests.length;
-
             // 点击左侧剧集卡片
             await this.page.evaluate((index) => {
               const container = document.querySelector('[data-overlayscrollbars-contents]');
@@ -1134,6 +1131,8 @@ class UserGrowthShortFilmNode {
 
             console.log(`[UserGrowthShortFilm] 已点击左侧剧集: ${episode.title}`);
             await new Promise((resolve) => setTimeout(resolve, 1500));
+
+            this.resetCapturedVideoRequests();
 
             // 点击右侧卡片触发视频加载
             const cardClicked = await this.page.evaluate(() => {
@@ -1184,6 +1183,7 @@ class UserGrowthShortFilmNode {
                   }
                 }, episode.index);
                 await new Promise((resolve) => setTimeout(resolve, 1500));
+                this.resetCapturedVideoRequests();
                 
                 // 步骤2: 点击右侧预览卡片触发视频加载
                 console.log(`[UserGrowthShortFilm]  ${episode.title} - 重新点击右侧卡片...`);
@@ -1212,7 +1212,7 @@ class UserGrowthShortFilmNode {
 
                 // 检查是否有新的URL
                 const afterCount = this.capturedRequests.length;
-                const newUrls = this.capturedRequests.slice(beforeCount, afterCount);
+                const newUrls = this.capturedRequests.slice(0, afterCount);
 
                 if (newUrls.length > 0) {
                   capturedUrl = newUrls[0];
@@ -1597,13 +1597,16 @@ class UserGrowthShortFilmNode {
       // 启用网络监听
       await client.send('Network.enable');
 
+      this.lastCapturedVideoUrl = '';
+
       // 监听所有响应
       client.on('Network.responseReceived', (params) => {
         const url = params.response.url;
         const mimeType = params.response.mimeType || '';
 
         // 检查是否是视频资源
-        if (url.includes('.mp4') || url.includes('.m3u8') || url.includes('.ts') || url.includes('video') || mimeType.includes('video') || mimeType.includes('application/vnd.apple.mpegurl')) {
+        if (this.isVideoResource(url, mimeType) && url !== this.lastCapturedVideoUrl) {
+          this.lastCapturedVideoUrl = url;
           this.capturedRequests.push(url);
           console.log(`[CDP监听] 捕获视频 #${this.capturedRequests.length}: ${url.substring(0, 100)}...`);
         }
@@ -1613,6 +1616,25 @@ class UserGrowthShortFilmNode {
     } catch (error) {
       console.error('[UserGrowthShortFilm] CDP监听设置失败:', error);
     }
+  }
+
+  isVideoResource(url, mimeType = '') {
+    const cleanUrl = String(url || '').split('?')[0].toLowerCase();
+    const normalizedMime = String(mimeType || '').toLowerCase();
+
+    return (
+      cleanUrl.endsWith('.mp4') ||
+      cleanUrl.endsWith('.m3u8') ||
+      cleanUrl.endsWith('.ts') ||
+      normalizedMime.startsWith('video/') ||
+      normalizedMime.includes('application/vnd.apple.mpegurl') ||
+      (cleanUrl.includes('chameleon.usergrowth.com.cn') && cleanUrl.includes('/video/'))
+    );
+  }
+
+  resetCapturedVideoRequests() {
+    this.capturedRequests = [];
+    this.lastCapturedVideoUrl = '';
   }
 
   /**

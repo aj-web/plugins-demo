@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install)",
+      "Bash(cmd.exe:*)",
+      "WebFetch(domain:localhost)",
+      "Bash(wc:*)",
+      "Bash(ls -la \"D:\\\\PYIDEWORKSPACE\\\\short-drama-platform\\\\packages\\\\worker-agent\\\\src\"\" 2>/dev/null || dir /b \"D:PYIDEWORKSPACEshort-drama-platformpackagesworker-agentsrc\"\")",
+      "Bash(npm run build:shared)",
+      "Bash(npx:*)",
+      "Bash(npm install:*)",
+      "Bash(curl:*)",
+      "Bash(node:*)",
+      "Bash(taskkill:*)"
+    ]
+  }
+}

@@ -194,7 +194,6 @@ export function setupIpcHandlers(): void {
   });
 
   ipcMain.handle('read-json-file', async (event, filePath: string) => {
-    console.log('[ipcHandlers] read-json-file called with filePath:', filePath);
     try {
       // 解析特殊路径格式
       let actualPath = filePath;
@@ -212,6 +211,10 @@ export function setupIpcHandlers(): void {
       }
 
       const content = fs.readFileSync(actualPath, 'utf-8');
+      if (!content.trim()) {
+        return { success: true, data: { version: '1.0', tasks: [] }, error: null };
+      }
+
       const data = JSON.parse(content);
       return { success: true, data, error: null };
     } catch (error) {

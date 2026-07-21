@@ -5,6 +5,7 @@ import { fetchQiancangDataWithCache } from './dataSourceUtils.js';
 import { invokeIpc, triggerEvent, unwrapIpcResponse } from './ipc.js';
 import { showToast } from './Prompt.js';
 import { TrackingEvent, TrackingPage, trackClick } from './tracking.js';
+import { normalizeOutputPaths, parentFolderOfFirstPath } from './taskPathUtils.js';
 
 const { h, ref, onMounted, watch } = Vue;
 
@@ -126,11 +127,24 @@ export const RemixTool = {
           };
         }
 
-        // 构建 readyList（从 bytegrowth.succDramas）
-        const readyList = (latestTask.bytegrowth?.succDramas || []).map((name) => {
-          const count = latestTask.bytegrowth?.fragmentCounts?.[name];
-          return count ? `${name} (${count}个片段)` : name;
+        // 构建 readyList（墨攻/ADX 两路复刻成品）
+        const outputs = latestTask.replication?.outputs || {};
+        const mogongOutput = outputs.mogong || {};
+        const adxOutput = outputs.adx || {};
+        const mogongReadyList = Object.keys(mogongOutput.outputCounts || {}).map((name) => {
+          const count = mogongOutput.outputCounts?.[name];
+          return count ? `墨攻：${name} (${count}个成品)` : `墨攻：${name}`;
         });
+        const adxReadyList = Object.keys(adxOutput.outputCounts || {}).map((name) => {
+          const count = adxOutput.outputCounts?.[name];
+          return count ? `ADX：${name} (${count}个成品)` : `ADX：${name}`;
+        });
+        const outputFolders = Array.from(
+          new Set([
+            ...normalizeOutputPaths(mogongOutput.outputPaths).map((p) => parentFolderOfFirstPath([p])),
+            ...normalizeOutputPaths(adxOutput.outputPaths).map((p) => parentFolderOfFirstPath([p]))
+          ].filter(Boolean))
+        ).map((p) => ({ label: p.includes('ADX') ? 'ADX复刻片段' : '墨攻复刻片段', path: p }));
 
         return {
           id: 'repClips',
@@ -138,9 +152,10 @@ export const RemixTool = {
           status: 'ready',
           readyTime: latestTask.completedAt?.split(' ')[1] || '-',
           folderPath: latestTask.outputPath,
+          folderPaths: outputFolders.length > 0 ? outputFolders : undefined,
           details: {
-            readyList: readyList,
-            missingList: latestTask.bytegrowth?.failedDramas || []
+            readyList: [...mogongReadyList, ...adxReadyList],
+            missingList: [...(mogongOutput.failedDramas || []).map((name) => `墨攻：${name}`), ...(adxOutput.failedDramas || []).map((name) => `ADX：${name}`)]
           }
         };
       } catch (error) {

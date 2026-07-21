@@ -41,8 +41,9 @@ class TaskQueue {
           if (task.status === '执行中') {
             task.status = '失败';
             if (task.module === '爆款复刻') {
-              task.bytegrowth.message = '插件重启，任务中断';
-              task.usergrowth.message = '插件重启，任务中断';
+              if (task.materials?.runFragments?.mogong) task.materials.runFragments.mogong.message = '插件重启，任务中断';
+              if (task.materials?.runFragments?.adx) task.materials.runFragments.adx.message = '插件重启，任务中断';
+              if (task.materials?.originals?.mogong) task.materials.originals.mogong.message = '插件重启，任务中断';
             } else if (task.module === '爆款扒产') {
               task.result.message = '插件重启，任务中断';
             }
@@ -198,21 +199,8 @@ class TaskQueue {
 
         // 根据 module 类型更新不同的字段
         if (task.module === '爆款复刻') {
-          task.bytegrowth = result.bytegrowth || {
-            message: '',
-            outputPaths: '',
-            succDramas: [],
-            failedDramas: [],
-            fragmentCounts: {}
-          };
-          task.bytegrowth.totalOutputCount = result.totalOutputCount || 0;
-          task.usergrowth = result.usergrowth || {
-            message: '',
-            outputPaths: '',
-            succDramas: [],
-            failedDramas: [],
-            originalCounts: {}
-          };
+          task.materials = result.materials || this.createEmptyReplicationMaterials();
+          task.replication = result.replication || this.createEmptyReplicationResult();
         } else if (task.module === '高光混剪') {
           // 高光混剪的结果结构
           task.usergrowth = result.usergrowth || {
@@ -335,20 +323,8 @@ class TaskQueue {
 
     if (module === '爆款复刻') {
       return {
-        bytegrowth: {
-          message: errorMessage,
-          outputPaths: '',
-          succDramas: [],
-          failedDramas: [],
-          fragmentCounts: {}
-        },
-        usergrowth: {
-          message: errorMessage,
-          outputPaths: '',
-          succDramas: [],
-          failedDramas: [],
-          originalCounts: {}
-        }
+        materials: this.createEmptyReplicationMaterials(errorMessage),
+        replication: this.createEmptyReplicationResult(errorMessage)
       };
     } else if (module === '爆款扒产') {
       return {
@@ -382,6 +358,61 @@ class TaskQueue {
         message: errorMessage
       };
     }
+  }
+
+  createEmptyReplicationMaterials(message = '') {
+    return {
+      runFragments: {
+        mogong: this.createEmptyRunFragmentResult(message),
+        adx: this.createEmptyRunFragmentResult(message)
+      },
+      originals: {
+        mogong: this.createEmptyOriginalResult(message)
+      }
+    };
+  }
+
+  createEmptyReplicationResult(message = '') {
+    return {
+      outputs: {
+        mogong: this.createEmptyReplicationOutputResult(message),
+        adx: this.createEmptyReplicationOutputResult(message)
+      },
+      totalOutputCount: 0
+    };
+  }
+
+  createEmptyRunFragmentResult(message = '') {
+    return {
+      message,
+      outputPaths: [],
+      succDramas: [],
+      failedDramas: [],
+      fragmentCounts: {},
+      errors: {}
+    };
+  }
+
+  createEmptyOriginalResult(message = '') {
+    return {
+      message,
+      outputPaths: [],
+      succDramas: [],
+      failedDramas: [],
+      episodeCounts: {},
+      errors: {}
+    };
+  }
+
+  createEmptyReplicationOutputResult(message = '') {
+    return {
+      message,
+      outputPaths: [],
+      outputCounts: {},
+      failedDramas: [],
+      errors: {},
+      totalOutputCount: 0
+    };
   }
 
   /**

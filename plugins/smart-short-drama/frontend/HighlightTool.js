@@ -4,6 +4,7 @@ import { ReadinessPanel } from './components.js';
 import { invokeIpc, triggerEvent, unwrapIpcResponse } from './ipc.js';
 import { showToast } from './Prompt.js';
 import { TrackingEvent, TrackingPage, trackClick } from './tracking.js';
+import { normalizeOutputPaths, parentFolderOfFirstPath } from './taskPathUtils.js';
 
 const { h } = Vue;
 
@@ -34,6 +35,7 @@ export const HighlightTool = {
     const imageOverlay = Vue.ref(loadState('imageOverlay', null));
     const outputPath = Vue.ref(loadState('outputPath', 'D:/ShortDrama'));
     const endRetentionSeconds = Vue.ref(loadState('endRetentionSeconds', 10));
+    const stitchEpisodeCount = Vue.ref(loadState('stitchEpisodeCount', 3));
     
     // 添加响应式的 readinessItems
     const readinessItems = Vue.ref([]);
@@ -44,6 +46,24 @@ export const HighlightTool = {
     Vue.watch(imageOverlay, (val) => saveState('imageOverlay', val));
     Vue.watch(outputPath, (val) => saveState('outputPath', val));
     Vue.watch(endRetentionSeconds, (val) => saveState('endRetentionSeconds', val));
+    Vue.watch(stitchEpisodeCount, (val) => saveState('stitchEpisodeCount', val));
+
+    const getOriginalSourceFromTask = (task) => {
+      if (task.module === '爆款复刻') {
+        return task.materials?.originals?.mogong || null;
+      }
+      if (task.module === '高光混剪') {
+        return task.usergrowth || null;
+      }
+      return null;
+    };
+
+    const getOriginalCounts = (task, source) => {
+      if (task.module === '爆款复刻') {
+        return source?.episodeCounts || {};
+      }
+      return source?.originalCounts || {};
+    };
 
     // 加载短剧原片数据（从爆款复刻任务中读取）
     const loadDramaOriginalData = async () => {
@@ -86,15 +106,12 @@ export const HighlightTool = {
         }
 
         // 辅助函数：从候选任务列表中，从最新往回找，找到第一个有可用原片数据的任务
-        // （状态为"已完成" 且 usergrowth.outputPaths 不为空）
         const findFirstUsableTask = (tasks) => {
           for (const task of tasks) {
-            if (task.status === '已完成' && task.usergrowth && task.usergrowth.outputPaths) {
-              const paths = task.usergrowth.outputPaths;
-              const hasPaths = Array.isArray(paths) ? paths.length > 0 : (typeof paths === 'string' && paths.trim() !== '');
-              if (hasPaths) {
-                return task;
-              }
+            const source = getOriginalSourceFromTask(task);
+            const paths = normalizeOutputPaths(source?.outputPaths);
+            if (task.status === '已完成' && paths.length > 0) {
+              return task;
             }
           }
           return null;
@@ -123,28 +140,16 @@ export const HighlightTool = {
           };
         }
 
-        // latestTask 已由 findFirstUsableTask 保证为「已完成」且「有 usergrowth.outputPaths」的任务，无需再判断状态
-        const usergrowth = latestTask.usergrowth;
-        // 兼容 outputPaths 格式：可能是数组（高光混剪）或分号分隔字符串（爆款复刻）
-        let firstOutputPath = '';
-        if (Array.isArray(usergrowth.outputPaths)) {
-          firstOutputPath = usergrowth.outputPaths[0] || '';
-        } else if (typeof usergrowth.outputPaths === 'string' && usergrowth.outputPaths.trim() !== '') {
-          firstOutputPath = usergrowth.outputPaths.split(';')[0].trim();
-        }
-
-        // 获取 outputPaths 第一个路径，然后提取父目录
-        // 路径结构：baseOutputPath/短剧原片/日期/剧名  →  父目录 = baseOutputPath/短剧原片/日期
-        let folderPath = '';
-        if (firstOutputPath) {
-          const pathParts = firstOutputPath.replace(/\\/g, '/').split('/');
-          pathParts.pop(); // 移除最后一部分（剧名文件夹）
-          folderPath = pathParts.join('\\');
-        }
+        const originalSource = getOriginalSourceFromTask(latestTask);
+        const originalFolderPaths = Array.from(new Set(normalizeOutputPaths(originalSource.outputPaths).map((p) => parentFolderOfFirstPath([p])).filter(Boolean))).map((p) => ({
+          label: '短剧原片',
+          path: p
+        }));
+        const folderPath = originalFolderPaths[0]?.path || '';
         console.log('[HighlightTool] 短剧原片父文件夹路径:', folderPath);
 
-        // 构建 readyList（从 originalCounts）
-        const originalCounts = usergrowth.originalCounts || {};
+        // 构建 readyList
+        const originalCounts = getOriginalCounts(latestTask, originalSource);
         const readyList = Object.keys(originalCounts).map((dramaName) => {
           const count = originalCounts[dramaName];
           return count ? `${dramaName} (${count}集)` : dramaName;
@@ -157,6 +162,7 @@ export const HighlightTool = {
           if (p.endFrameFolderPath && !localEndFrame.value) localEndFrame.value = p.endFrameFolderPath;
           if (p.outputPath && !outputPath.value) outputPath.value = p.outputPath.replace(/\//g, '\\');
           if ((p.endRetentionSeconds != null) && !endRetentionSeconds.value) endRetentionSeconds.value = p.endRetentionSeconds;
+          if (p.stitchEpisodeCount != null && !stitchEpisodeCount.value) stitchEpisodeCount.value = p.stitchEpisodeCount;
           if (p.dramaListFilePath && !dramaListFilePath.value) {
             dramaListFilePath.value = p.dramaListFilePath;
             fileName.value = p.dramaListFilePath.split(/[/\\]/).pop();
@@ -170,6 +176,7 @@ export const HighlightTool = {
           status: 'ready',
           readyTime: latestTask.completedAt?.split(' ')[1] || '-',
           folderPath: folderPath,  // 使用父目录路径
+          folderPaths: originalFolderPaths,
           details: {
             readyList: readyList,
             missingList: []
@@ -389,15 +396,10 @@ export const HighlightTool = {
         // 1. 检查 Excel 是否已上传
         const hasExcel = dramaListFilePath.value && dramaListFilePath.value.trim() !== '';
 
-        // 2. 检查 ReadinessPanel 数据源是否就绪
-        const dramaOriginalReady = readinessItems.value.length > 0 &&
-          readinessItems.value[0].status === 'ready' &&
-          readinessItems.value[0].folderPath;
-
-        // 3. Excel 与已就绪的短剧原片数据源二选一即可
-        if (!hasExcel && !dramaOriginalReady) {
+        // 2. 启动批量任务必须使用 Excel 剧目列表，不再从历史数据源兜底取剧名。
+        if (!hasExcel) {
           showToast({
-            message: '请上传剧目列表 Excel 文件，或先准备短剧原片数据源',
+            message: '请先上传剧目列表 Excel 文件',
             type: 'warning',
             duration: 3000
           });
@@ -428,10 +430,16 @@ export const HighlightTool = {
           return;
         }
 
+        const stitchEpisodeCountValue = Number(stitchEpisodeCount.value);
+        if (![1, 2, 3].includes(stitchEpisodeCountValue)) {
+          showToast({ message: '拼接集数只能选择 1、2、3', type: 'warning', duration: 3000 });
+          return;
+        }
+
         console.log('[HighlightTool] 所有验证通过，开始提交任务');
 
         // 2. 准备参数
-        const dramaListFilePathValue = hasExcel ? dramaListFilePath.value : '';
+        const dramaListFilePathValue = dramaListFilePath.value;
         const imageOverlayPath = imageOverlay.value;
         const endFrameFolderPath = localEndFrame.value;
         const outputPathValue = outputPath.value;
@@ -440,11 +448,11 @@ export const HighlightTool = {
 
         console.log('[HighlightTool] 调用后端参数:', {
           dramaListFilePath: dramaListFilePathValue,
-          useReadyOriginalData: !hasExcel && dramaOriginalReady,
           imageOverlayPath,
           endFrameFolderPath,
           outputPath: outputPathValue,
           endRetentionSeconds: endRetentionSecondsValue,
+          stitchEpisodeCount: stitchEpisodeCountValue,
           isScheduledTask
         });
 
@@ -456,7 +464,8 @@ export const HighlightTool = {
             endFrameFolderPath,
             outputPathValue,
             endRetentionSecondsValue,
-            isScheduledTask
+            isScheduledTask,
+            stitchEpisodeCountValue
           ]
         });
 
@@ -612,6 +621,22 @@ export const HighlightTool = {
                   }),
                   h('div', { class: 'absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none' }, [h('span', { class: 'text-gray-400 text-xs' }, '秒')])
                 ])
+              ]),
+              h('div', {}, [
+                h('label', { class: 'block text-sm font-medium text-gray-700 mb-2' }, '拼接集数'),
+                h(
+                  'select',
+                  {
+                    value: stitchEpisodeCount.value,
+                    onChange: (e) => (stitchEpisodeCount.value = Number(e.target.value)),
+                    class: 'w-full border border-gray-300 rounded px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors bg-white'
+                  },
+                  [
+                    h('option', { value: 1 }, '1集'),
+                    h('option', { value: 2 }, '2集'),
+                    h('option', { value: 3 }, '3集')
+                  ]
+                )
               ])
             ])
           ]),

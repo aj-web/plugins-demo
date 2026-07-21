@@ -790,6 +790,124 @@ class ADXSearchNode {
       };
     }
   }
+
+  async processReplicationFragments(outputPath, dramaNames, dateStr, searchLimit = 20) {
+    const fs = require('fs');
+    const path = require('path');
+
+    const today =
+      dateStr ||
+      (() => {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      })();
+
+    const results = {};
+    const succDramas = [];
+    const failedDramas = [];
+    const fragmentCounts = {};
+
+    if (!outputPath || !Array.isArray(dramaNames) || dramaNames.length === 0) {
+      return {
+        results,
+        succDramas,
+        failedDramas: Array.isArray(dramaNames) ? dramaNames : [],
+        fragmentCounts,
+        message: 'ADX跑量片段参数不完整'
+      };
+    }
+
+    let cookies = this.cookieManager.getCookies('adx');
+    if (!cookies || cookies.length === 0) {
+      const FileCookieStore = require('../utils/file-cookie-store');
+      const fileCookies = FileCookieStore.loadCookies(this.cookieFileName);
+      if (fileCookies && fileCookies.length > 0) {
+        this.cookieManager.saveCookies('adx', fileCookies);
+        cookies = fileCookies;
+      }
+    }
+
+    if (!cookies || cookies.length === 0) {
+      return {
+        results,
+        succDramas,
+        failedDramas: dramaNames,
+        fragmentCounts,
+        message: 'ADX平台未登录'
+      };
+    }
+
+    for (let i = 0; i < dramaNames.length; i++) {
+      const dramaName = dramaNames[i];
+      try {
+        if (!dramaName || !String(dramaName).trim()) {
+          continue;
+        }
+
+        console.log(`[ADXSearch] 复刻跑量片段 ${i + 1}/${dramaNames.length}: ${dramaName}`);
+        const parsedDrama = this.parseDramaName(dramaName);
+        const cleanDramaName = String(parsedDrama.newName || dramaName).trim().replace(/[<>:"/\\|?*]/g, '_');
+        const dramaDir = path.join(outputPath, '跑量片段', today, 'ADX', cleanDramaName);
+
+        if (!fs.existsSync(dramaDir)) {
+          fs.mkdirSync(dramaDir, { recursive: true });
+        }
+
+        const existingVideos = fs
+          .readdirSync(dramaDir)
+          .filter((file) => ['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv'].includes(path.extname(file).toLowerCase()));
+
+        if (existingVideos.length > 0) {
+          console.log(`[ADXSearch] 复用已存在ADX跑量片段: ${dramaName}, 数量: ${existingVideos.length}`);
+          results[dramaName] = dramaDir;
+          succDramas.push(dramaName);
+          fragmentCounts[dramaName] = existingVideos.length;
+          continue;
+        }
+
+        const searchResult = await this.startSearch(dramaName, searchLimit);
+        await new Promise((resolve) => setTimeout(resolve, 30000));
+
+        if (!searchResult || !searchResult.success) {
+          failedDramas.push(dramaName);
+          console.log(`[ADXSearch] ADX搜索失败: ${dramaName}`, searchResult?.message);
+          continue;
+        }
+
+        const mp4Links =
+          searchResult.data?.filter((item) => item.videoUrl && item.videoUrl.trim() !== '').map((item) => ({ videoUrl: item.videoUrl, durationSeconds: item.durationSeconds || 0 })) || [];
+
+        if (mp4Links.length === 0) {
+          failedDramas.push(dramaName);
+          console.log(`[ADXSearch] 未找到ADX跑量片段: ${dramaName}`);
+          continue;
+        }
+
+        const downloadedFiles = await this.downloadMp4Files(mp4Links, dramaDir, cleanDramaName);
+        if (downloadedFiles.length > 0) {
+          results[dramaName] = dramaDir;
+          succDramas.push(dramaName);
+          fragmentCounts[dramaName] = downloadedFiles.length;
+          console.log(`[ADXSearch] ADX跑量片段下载完成: ${dramaName}, 数量: ${downloadedFiles.length}`);
+        } else {
+          failedDramas.push(dramaName);
+          console.log(`[ADXSearch] ADX跑量片段下载失败: ${dramaName}`);
+        }
+      } catch (error) {
+        failedDramas.push(dramaName);
+        console.error(`[ADXSearch] 复刻跑量片段处理异常: ${dramaName}`, error);
+      }
+    }
+
+    return {
+      results,
+      succDramas,
+      failedDramas,
+      fragmentCounts,
+      message: `ADX跑量片段处理完成，成功 ${succDramas.length} 部，失败 ${failedDramas.length} 部`
+    };
+  }
+
   async downloadMp4Files(links, downloadPath, dramaName) {
     try {
       const fs = require('fs');

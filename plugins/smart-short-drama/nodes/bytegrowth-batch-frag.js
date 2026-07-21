@@ -11,6 +11,8 @@ const { BrowserManager } = require('../utils/browser-manager');
 const FileCookieStore = require('../utils/file-cookie-store');
 const { GlobalCookieManager } = require('../utils/global-cookie-manager');
 const { UserGrowthShortFilmNode } = require('./usergrowth-short-film');
+const dramaListParser = require('../utils/drama-list-parser');
+const { ADXSearchNode } = require('./adx-search');
 
 class UserGrowthBatchFragmentsNode {
   constructor() {
@@ -40,14 +42,15 @@ class UserGrowthBatchFragmentsNode {
    * @param {boolean} isScheduledTask - 是否为定时任务
    * @returns {Promise<Object>} 处理结果
    */
-  async autoStartProcessing(outputPath, processCount = 5, exportConfig = {}, dedupeExpireDays = 30, isScheduledTask = false) {
+  async autoStartProcessing(outputPath, processCount = 5, exportConfig = {}, dedupeExpireDays = 30, isScheduledTask = false, dramaListFilePath = '') {
     console.log('[UserGrowthBatchFragments] autoStartProcessing 开始执行');
     console.log('[UserGrowthBatchFragments] 接收到的参数:', {
       outputPath,
       processCount,
       exportConfig,
       dedupeExpireDays,
-      isScheduledTask
+      isScheduledTask,
+      dramaListFilePath
     });
 
     // 懒加载任务队列
@@ -73,26 +76,29 @@ class UserGrowthBatchFragmentsNode {
       completedAt: '',
       status: '待执行',
       outputPath: dedupOutputPath,
-      bytegrowth: {
-        message: '',
-        outputPaths: '',
-        succDramas: [],
-        failedDramas: [],
-        fragmentCounts: {}
+      materials: {
+        runFragments: {
+          mogong: this.createEmptyRunFragmentResult(),
+          adx: this.createEmptyRunFragmentResult()
+        },
+        originals: {
+          mogong: this.createEmptyOriginalResult()
+        }
       },
-      usergrowth: {
-        message: '',
-        outputPaths: '',
-        succDramas: [],
-        failedDramas: [],
-        originalCounts: {}
+      replication: {
+        outputs: {
+          mogong: this.createEmptyReplicationOutputResult(),
+          adx: this.createEmptyReplicationOutputResult()
+        },
+        totalOutputCount: 0
       },
       params: {
         outputPath,
         processCount,
         exportConfig,
         dedupeExpireDays,
-        isScheduledTask
+        isScheduledTask,
+        dramaListFilePath
       }
     };
 
@@ -104,16 +110,16 @@ class UserGrowthBatchFragmentsNode {
       // 计算路径：basePath/复刻片段/日期/ 和 basePath/爆款复刻/日期/
       const now = new Date();
       const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      const replicationBasePath_part = path.join(params.outputPath, '跑量片段', dateStr);
-      const replicationBasePath_all = path.join(params.outputPath, '短剧原片', dateStr);
+      const replicationBasePath_part = path.join(params.outputPath, '跑量片段', dateStr, '墨攻');
+      const replicationBasePath_all = path.join(params.outputPath, '短剧原片', dateStr, '墨攻');
       const dedupOutputPath = path.join(params.outputPath, '复刻片段', dateStr);
 
-      console.log('[UserGrowthBatchFragments] 跑量片段基础路径:', replicationBasePath_part);
+      console.log('[UserGrowthBatchFragments] 墨攻跑量片段基础路径:', replicationBasePath_part);
       console.log('[UserGrowthBatchFragments] 短剧原片基础路径:', replicationBasePath_all);
       console.log('[UserGrowthBatchFragments] 去重结果输出路径:', dedupOutputPath);
 
-      // 步骤1: 获取热门剧目并去重
-      const selectedDramas = await this.getSelectedDramas(params.dedupeExpireDays, params.processCount);
+      // 步骤1: 从 Excel 获取剧目。爆款复刻不再依赖千仓热榜选剧。
+      const selectedDramas = await this.getSelectedDramasFromExcel(params.dramaListFilePath);
       if (!selectedDramas || selectedDramas.length === 0) {
         // 判断任务类型：定时任务 vs 即时任务
         if (params.isScheduledTask) {
@@ -124,131 +130,190 @@ class UserGrowthBatchFragmentsNode {
 
           // 返回特殊结果，表示任务完成但无可用剧目
           return {
-            bytegrowth: {
-              message: '暂无可用剧目（所有热门剧最近都已下载），已安排 1 小时后重试',
-              outputPaths: '',
-              succDramas: [],
-              failedDramas: [],
-              fragmentCounts: {}
+            materials: {
+              runFragments: {
+                mogong: {
+                  ...this.createEmptyRunFragmentResult(),
+                  message: '暂无可用剧目，已安排 1 小时后重试'
+                },
+                adx: this.createEmptyRunFragmentResult()
+              },
+              originals: {
+                mogong: this.createEmptyOriginalResult()
+              }
             },
-            usergrowth: {
-              message: '',
-              outputPaths: '',
-              succDramas: [],
-              failedDramas: [],
-              originalCounts: {}
+            replication: {
+              outputs: {
+                mogong: this.createEmptyReplicationOutputResult(),
+                adx: this.createEmptyReplicationOutputResult()
+              },
+              totalOutputCount: 0
             }
           };
         } else {
           // 即时任务直接抛出错误
           console.log('[UserGrowthBatchFragments] 即时任务无可用剧目，任务结束');
-          throw new Error('没有可处理的新剧目（所有热门剧最近都已下载）');
+          throw new Error('没有可处理的剧目，请上传有效的剧目列表 Excel');
         }
       }
 
       console.log('[UserGrowthBatchFragments] 选中剧目:', selectedDramas);
+      const reusableMaterials = this.collectReusableReplicationMaterials(selectedDramas);
+      console.log('[UserGrowthBatchFragments] 可复用素材统计:', {
+        mogongFragments: reusableMaterials.runFragments.mogong.succDramas.length,
+        adxFragments: reusableMaterials.runFragments.adx.succDramas.length,
+        originals: reusableMaterials.originals.mogong.succDramas.length
+      });
 
-      // 步骤2: 批量处理 ByteGrowth 平台剧目（片段）
-      let byteGrowthData = null;
-      let byteGrowthMessage = '';
+      // 步骤2: 批量处理墨攻平台剧目（跑量片段）
+      let mogongFragmentData = reusableMaterials.runFragments.mogong;
+      let mogongFragmentMessage = mogongFragmentData.message || '';
+      const missingMogongFragmentDramas = selectedDramas.filter((name) => !mogongFragmentData.results[name]);
 
-      try {
-        byteGrowthData = await this.processUserGrowthFragmentDramas(selectedDramas, replicationBasePath_part);
-        console.log('[UserGrowthBatchFragments] ByteGrowth 处理完成:', byteGrowthData);
-      } catch (error) {
-        console.error('[UserGrowthBatchFragments] ByteGrowth 处理异常:', error);
-        byteGrowthMessage = `处理异常: ${error.message}`;
-        byteGrowthData = {
-          results: {},
-          succDramas: [],
-          failedDramas: selectedDramas
-        };
+      if (missingMogongFragmentDramas.length > 0) {
+        try {
+          const downloadedMogongFragments = await this.processUserGrowthFragmentDramas(missingMogongFragmentDramas, replicationBasePath_part);
+          mogongFragmentData = this.mergeMaterialResults(mogongFragmentData, downloadedMogongFragments, 'fragmentCounts');
+          mogongFragmentMessage = `${mogongFragmentMessage}${mogongFragmentMessage ? '；' : ''}墨攻跑量片段补下载完成，成功 ${downloadedMogongFragments.succDramas?.length || 0} 部，失败 ${downloadedMogongFragments.failedDramas?.length || 0} 部`;
+          console.log('[UserGrowthBatchFragments] 墨攻跑量片段处理完成:', mogongFragmentData);
+        } catch (error) {
+          console.error('[UserGrowthBatchFragments] 墨攻跑量片段处理异常:', error);
+          mogongFragmentMessage = `处理异常: ${error.message}`;
+          mogongFragmentData = this.mergeMaterialResults(mogongFragmentData, {
+            results: {},
+            succDramas: [],
+            failedDramas: missingMogongFragmentDramas,
+            fragmentCounts: {},
+            errors: Object.fromEntries(missingMogongFragmentDramas.map((name) => [name, error.message]))
+          }, 'fragmentCounts');
+        }
+      } else {
+        console.log('[UserGrowthBatchFragments] 墨攻跑量片段均已存在，跳过墨攻片段下载');
+      }
+
+      // 步骤2.5: ADX 跑量片段爬取。ADX 失败不阻断墨攻原链路。
+      let adxGrowthData = reusableMaterials.runFragments.adx;
+      let adxGrowthMessage = adxGrowthData.message || '';
+      const missingAdxFragmentDramas = selectedDramas.filter((name) => !adxGrowthData.results[name]);
+
+      if (missingAdxFragmentDramas.length > 0) {
+        try {
+          const adxNode = new ADXSearchNode();
+          const downloadedAdxFragments = await adxNode.processReplicationFragments(params.outputPath, missingAdxFragmentDramas, dateStr, 20);
+          adxGrowthData = this.mergeMaterialResults(adxGrowthData, downloadedAdxFragments, 'fragmentCounts');
+          adxGrowthMessage = `${adxGrowthMessage}${adxGrowthMessage ? '；' : ''}${downloadedAdxFragments.message || ''}`;
+          console.log('[UserGrowthBatchFragments] ADX 跑量片段处理完成:', adxGrowthData);
+        } catch (error) {
+          console.error('[UserGrowthBatchFragments] ADX 跑量片段处理异常:', error);
+          adxGrowthMessage = `处理异常: ${error.message}`;
+          adxGrowthData = this.mergeMaterialResults(adxGrowthData, {
+            results: {},
+            succDramas: [],
+            failedDramas: missingAdxFragmentDramas,
+            fragmentCounts: {},
+            errors: Object.fromEntries(missingAdxFragmentDramas.map((name) => [name, error.message]))
+          }, 'fragmentCounts');
+        }
+      } else {
+        console.log('[UserGrowthBatchFragments] ADX跑量片段均已存在，跳过ADX爬取');
       }
 
       // 步骤3: 批量处理墨攻平台剧目（全量原片）
-      let userGrowthData = null;
-      let userGrowthMessage = '';
+      const originalDramaNames = Array.from(new Set([...(mogongFragmentData.succDramas || []), ...(adxGrowthData.succDramas || [])]));
+      let userGrowthData = this.filterMaterialResult(reusableMaterials.originals.mogong, originalDramaNames, 'originalCounts');
+      let userGrowthMessage = userGrowthData.message || '';
+      const missingOriginalDramaNames = originalDramaNames.filter((name) => !userGrowthData.results[name]);
 
-      if (byteGrowthData.succDramas.length === 0) {
-        console.log('[UserGrowthBatchFragments] ByteGrowth 没有成功的短剧，跳过墨攻平台处理');
+      if (originalDramaNames.length === 0) {
+        console.log('[UserGrowthBatchFragments] 没有成功的墨攻/ADX跑量片段，跳过短剧原片处理');
         userGrowthData = {
           results: {},
           succDramas: [],
-          failedDramas: []
+          failedDramas: [],
+          originalCounts: {},
+          errors: {}
         };
-      } else {
+      } else if (missingOriginalDramaNames.length > 0) {
         try {
-          userGrowthData = await this.processUserGrowthDramas(byteGrowthData.succDramas, replicationBasePath_all);
+          const downloadedOriginals = await this.processUserGrowthDramas(missingOriginalDramaNames, replicationBasePath_all);
+          userGrowthData = this.mergeMaterialResults(userGrowthData, downloadedOriginals, 'originalCounts');
+          userGrowthMessage = `${userGrowthMessage}${userGrowthMessage ? '；' : ''}短剧原片补下载完成，成功 ${downloadedOriginals.succDramas?.length || 0} 部，失败 ${downloadedOriginals.failedDramas?.length || 0} 部`;
           console.log('[UserGrowthBatchFragments] 墨攻平台处理完成:', userGrowthData);
         } catch (error) {
           console.error('[UserGrowthBatchFragments] 墨攻平台处理异常:', error);
           userGrowthMessage = `处理异常: ${error.message}`;
-          userGrowthData = {
+          userGrowthData = this.mergeMaterialResults(userGrowthData, {
             results: {},
             succDramas: [],
-            failedDramas: byteGrowthData.succDramas
-          };
+            failedDramas: missingOriginalDramaNames,
+            originalCounts: {},
+            errors: Object.fromEntries(missingOriginalDramaNames.map((name) => [name, error.message]))
+          }, 'originalCounts');
         }
+      } else {
+        console.log('[UserGrowthBatchFragments] 短剧原片均已存在，跳过墨攻原片下载');
       }
 
       // 步骤4: 视频去重流程（调用本地服务）
       const VideoDedupService = require('./video-dedup-service');
       const dedupService = new VideoDedupService();
-      const dedupResults = {}; // 记录每个剧目的去重输出路径
-      const dedupOutputCounts = {}; // 记录每个剧目的去重视频产出数量
-      let totalOutputCount = 0;
+      const mogongDedup = await this.processDedupForFragmentSource({
+        sourceName: '墨攻',
+        fragmentData: mogongFragmentData,
+        userGrowthData,
+        dedupService,
+        outputBasePath: path.join(dedupOutputPath, '墨攻')
+      });
 
-      // 对每个成功的剧目执行去重
-      for (const dramaName of byteGrowthData.succDramas) {
-        if (userGrowthData.succDramas.includes(dramaName)) {
-          const userGrowthPath = userGrowthData.results[dramaName]; // 全量原片路径
-          const byteGrowthPath = byteGrowthData.results[dramaName]; // 片段路径
+      const adxDedup = await this.processDedupForFragmentSource({
+        sourceName: 'ADX',
+        fragmentData: adxGrowthData,
+        userGrowthData,
+        dedupService,
+        outputBasePath: path.join(dedupOutputPath, 'ADX')
+      });
 
-          console.log(`[UserGrowthBatchFragments] 开始去重: ${dramaName}`);
-          console.log(`[UserGrowthBatchFragments]   全量原片: ${userGrowthPath}`);
-          console.log(`[UserGrowthBatchFragments]   片段视频: ${byteGrowthPath}`);
+      const totalOutputCount = mogongDedup.totalOutputCount + adxDedup.totalOutputCount;
 
-          try {
-            const dramaDedupOutputPath = path.join(dedupOutputPath, dramaName);
-            const dedupResult = await dedupService.processDeduplication(userGrowthPath, byteGrowthPath, dramaName, dramaDedupOutputPath);
-
-            if (dedupResult.success) {
-              console.log(`[UserGrowthBatchFragments] 去重完成: ${dramaName} -> ${dramaDedupOutputPath}`);
-              dedupResults[dramaName] = dramaDedupOutputPath;
-
-              const outputCount = this.countDedupOutputVideos(dedupResult, dramaDedupOutputPath);
-              dedupOutputCounts[dramaName] = outputCount;
-              totalOutputCount += outputCount;
-              console.log(`[UserGrowthBatchFragments] 去重产出视频数量: ${dramaName} -> ${outputCount}`);
-            } else {
-              console.error(`[UserGrowthBatchFragments] 去重失败: ${dramaName}, 错误: ${dedupResult.error}`);
-            }
-          } catch (error) {
-            console.error(`[UserGrowthBatchFragments] 去重异常: ${dramaName}, 错误: ${error.message}`);
-          }
-        }
-      }
-
-      // 步骤5: 组装结果并返回
-      // bytegrowth.outputPaths = 复刻片段的实际输出路径（去重后）
-      // bytegrowth.succDramas = 跑量片段下载成功的剧目（保持原意）
       return {
-        bytegrowth: {
-          message: byteGrowthMessage,
-          outputPaths: Object.values(dedupResults).join(';'), // 复刻片段的实际输出路径
-          succDramas: byteGrowthData.succDramas, // 跑量片段下载成功的剧目
-          failedDramas: byteGrowthData.failedDramas,
-          fragmentCounts: byteGrowthData.fragmentCounts || {},
-          outputCounts: dedupOutputCounts
+        materials: {
+          runFragments: {
+            mogong: {
+              message: mogongFragmentMessage,
+              outputPaths: Object.values(mogongFragmentData.results || {}),
+              succDramas: mogongFragmentData.succDramas || [],
+              failedDramas: mogongFragmentData.failedDramas || [],
+              fragmentCounts: mogongFragmentData.fragmentCounts || {},
+              errors: mogongFragmentData.errors || {}
+            },
+            adx: {
+              message: adxGrowthMessage,
+              outputPaths: Object.values(adxGrowthData.results || {}),
+              succDramas: adxGrowthData.succDramas || [],
+              failedDramas: adxGrowthData.failedDramas || [],
+              fragmentCounts: adxGrowthData.fragmentCounts || {},
+              errors: adxGrowthData.errors || {}
+            }
+          },
+          originals: {
+            mogong: {
+              message: userGrowthMessage,
+              outputPaths: Object.values(userGrowthData.results || {}),
+              succDramas: userGrowthData.succDramas || [],
+              failedDramas: userGrowthData.failedDramas || [],
+              episodeCounts: userGrowthData.originalCounts || {},
+              errors: userGrowthData.errors || {}
+            }
+          }
         },
-        usergrowth: {
-          message: userGrowthMessage,
-          outputPaths: Object.values(userGrowthData.results).join(';'),
-          succDramas: userGrowthData.succDramas,
-          failedDramas: userGrowthData.failedDramas,
-          originalCounts: userGrowthData.originalCounts || {}
+        replication: {
+          outputs: {
+            mogong: mogongDedup,
+            adx: adxDedup
+          },
+          totalOutputCount
         },
-        totalOutputCount: totalOutputCount
+        totalOutputCount
       };
     };
 
@@ -271,6 +336,359 @@ class UserGrowthBatchFragmentsNode {
         message: `提交任务失败: ${error.message}`
       };
     }
+  }
+
+  /**
+   * 跑量片段素材结果空结构。
+   */
+  createEmptyRunFragmentResult(message = '') {
+    return {
+      message,
+      outputPaths: [],
+      succDramas: [],
+      failedDramas: [],
+      fragmentCounts: {},
+      errors: {}
+    };
+  }
+
+  /**
+   * 短剧原片素材结果空结构。
+   */
+  createEmptyOriginalResult(message = '') {
+    return {
+      message,
+      outputPaths: [],
+      succDramas: [],
+      failedDramas: [],
+      episodeCounts: {},
+      errors: {}
+    };
+  }
+
+  /**
+   * 复刻成品结果空结构。
+   */
+  createEmptyReplicationOutputResult(message = '') {
+    return {
+      message,
+      outputPaths: [],
+      outputCounts: {},
+      failedDramas: [],
+      errors: {}
+    };
+  }
+
+  /**
+   * 从复刻页面上传的 Excel 中读取剧目列表。
+   */
+  async getSelectedDramasFromExcel(dramaListFilePath) {
+    if (!dramaListFilePath || String(dramaListFilePath).trim() === '') {
+      throw new Error('请先上传剧目列表 Excel');
+    }
+
+    const parseResult = await dramaListParser.parseDramaList(dramaListFilePath);
+    if (!parseResult.success || !Array.isArray(parseResult.dramaNames) || parseResult.dramaNames.length === 0) {
+      throw new Error(parseResult.message || 'Excel 解析失败或剧目列表为空');
+    }
+
+    const seen = new Set();
+    const dramaNames = [];
+    for (const name of parseResult.dramaNames) {
+      const cleanName = String(name || '').trim();
+      if (!cleanName || seen.has(cleanName)) {
+        continue;
+      }
+      seen.add(cleanName);
+      dramaNames.push(cleanName);
+    }
+
+    console.log('[UserGrowthBatchFragments] Excel 剧目列表:', dramaNames);
+    return dramaNames;
+  }
+
+  collectReusableReplicationMaterials(dramaNames) {
+    const tasks = this.getCompletedReplicationTasks();
+    return {
+      runFragments: {
+        mogong: this.collectReusableMaterial({
+          tasks,
+          dramaNames,
+          sourceName: '墨攻跑量片段',
+          countKey: 'fragmentCounts',
+          minVideoCount: 1,
+          getSource: (task) => task.materials?.runFragments?.mogong
+        }),
+        adx: this.collectReusableMaterial({
+          tasks,
+          dramaNames,
+          sourceName: 'ADX跑量片段',
+          countKey: 'fragmentCounts',
+          minVideoCount: 1,
+          getSource: (task) => task.materials?.runFragments?.adx
+        })
+      },
+      originals: {
+        mogong: this.collectReusableMaterial({
+          tasks,
+          dramaNames,
+          sourceName: '墨攻短剧原片',
+          countKey: 'originalCounts',
+          sourceCountKey: 'episodeCounts',
+          minVideoCount: 10,
+          getSource: (task) => task.materials?.originals?.mogong
+        })
+      }
+    };
+  }
+
+  getCompletedReplicationTasks() {
+    try {
+      const data = this.taskManager.readTaskData();
+      return (data.tasks || [])
+        .filter((task) => task.module === '爆款复刻' && task.status === '已完成')
+        .sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
+    } catch (error) {
+      console.warn('[UserGrowthBatchFragments] 读取历史复刻任务失败:', error.message);
+      return [];
+    }
+  }
+
+  collectReusableMaterial({ tasks, dramaNames, sourceName, countKey, sourceCountKey = countKey, minVideoCount, getSource }) {
+    const result = {
+      results: {},
+      succDramas: [],
+      failedDramas: [],
+      [countKey]: {},
+      errors: {},
+      message: ''
+    };
+
+    for (const dramaName of dramaNames) {
+      const reusable = this.findReusableMaterialForDrama(tasks, dramaName, getSource, sourceCountKey, minVideoCount);
+      if (!reusable) {
+        continue;
+      }
+
+      result.results[dramaName] = reusable.path;
+      result.succDramas.push(dramaName);
+      result[countKey][dramaName] = reusable.count;
+    }
+
+    result.message = result.succDramas.length > 0 ? `${sourceName}复用历史素材 ${result.succDramas.length} 部` : '';
+    return result;
+  }
+
+  findReusableMaterialForDrama(tasks, dramaName, getSource, sourceCountKey, minVideoCount) {
+    for (const task of tasks) {
+      const source = getSource(task);
+      if (!source || !Array.isArray(source.succDramas) || !source.succDramas.includes(dramaName)) {
+        continue;
+      }
+
+      const materialPath = this.findMaterialPathForDrama(source.outputPaths, dramaName);
+      if (!materialPath) {
+        continue;
+      }
+
+      const actualCount = this.countVideoFiles(materialPath);
+      if (actualCount < minVideoCount) {
+        console.warn(`[UserGrowthBatchFragments] 历史素材文件数不足，忽略: ${dramaName}, ${materialPath}, count=${actualCount}`);
+        continue;
+      }
+
+      return {
+        path: materialPath,
+        count: Math.max(Number(source[sourceCountKey]?.[dramaName] || 0), actualCount)
+      };
+    }
+
+    return null;
+  }
+
+  findMaterialPathForDrama(outputPaths, dramaName) {
+    const path = require('path');
+    const paths = this.normalizeOutputPaths(outputPaths);
+    const cleanDramaName = this.sanitizePathName(dramaName);
+
+    return paths.find((itemPath) => {
+      const baseName = path.basename(itemPath);
+      return baseName === dramaName || baseName === cleanDramaName;
+    }) || (paths.length === 1 ? paths[0] : '');
+  }
+
+  normalizeOutputPaths(outputPaths) {
+    if (Array.isArray(outputPaths)) {
+      return outputPaths.map((p) => String(p || '').trim()).filter(Boolean);
+    }
+    if (typeof outputPaths === 'string') {
+      return outputPaths.split(';').map((p) => p.trim()).filter(Boolean);
+    }
+    return [];
+  }
+
+  countVideoFiles(folderPath) {
+    const fs = require('fs');
+    const path = require('path');
+    const videoExtensions = new Set(['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv']);
+
+    try {
+      if (!folderPath || !fs.existsSync(folderPath) || !fs.statSync(folderPath).isDirectory()) {
+        return 0;
+      }
+
+      let count = 0;
+      const walk = (dir) => {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          const entryPath = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            walk(entryPath);
+          } else if (videoExtensions.has(path.extname(entry.name).toLowerCase())) {
+            count++;
+          }
+        }
+      };
+
+      walk(folderPath);
+      return count;
+    } catch (error) {
+      console.warn('[UserGrowthBatchFragments] 统计视频文件失败:', folderPath, error.message);
+      return 0;
+    }
+  }
+
+  mergeMaterialResults(baseResult, nextResult, countKey) {
+    const merged = {
+      results: { ...(baseResult?.results || {}) },
+      succDramas: [...(baseResult?.succDramas || [])],
+      failedDramas: [...(baseResult?.failedDramas || [])],
+      [countKey]: { ...(baseResult?.[countKey] || {}) },
+      errors: { ...(baseResult?.errors || {}) },
+      message: baseResult?.message || ''
+    };
+
+    for (const dramaName of nextResult?.succDramas || []) {
+      if (!merged.succDramas.includes(dramaName)) {
+        merged.succDramas.push(dramaName);
+      }
+      delete merged.errors[dramaName];
+    }
+
+    for (const dramaName of nextResult?.failedDramas || []) {
+      if (!merged.results[dramaName] && !merged.failedDramas.includes(dramaName)) {
+        merged.failedDramas.push(dramaName);
+      }
+    }
+
+    Object.assign(merged.results, nextResult?.results || {});
+    Object.assign(merged[countKey], nextResult?.[countKey] || {});
+    Object.assign(merged.errors, nextResult?.errors || {});
+    merged.failedDramas = merged.failedDramas.filter((name) => !merged.results[name]);
+
+    return merged;
+  }
+
+  filterMaterialResult(result, dramaNames, countKey) {
+    const filtered = {
+      results: {},
+      succDramas: [],
+      failedDramas: [],
+      [countKey]: {},
+      errors: {},
+      message: result?.message || ''
+    };
+    const allowed = new Set(dramaNames);
+
+    for (const dramaName of result?.succDramas || []) {
+      if (!allowed.has(dramaName)) continue;
+      filtered.results[dramaName] = result.results?.[dramaName];
+      filtered.succDramas.push(dramaName);
+      filtered[countKey][dramaName] = result[countKey]?.[dramaName] || 0;
+    }
+
+    return filtered;
+  }
+
+  /**
+   * 对某一路跑量片段做复刻去重，输出到 复刻片段/YYYY-MM-DD/来源/剧名。
+   */
+  async processDedupForFragmentSource({ sourceName, fragmentData, userGrowthData, dedupService, outputBasePath }) {
+    const path = require('path');
+    const outputPaths = [];
+    const outputCounts = {};
+    const failedDramas = [];
+    const errors = {};
+    let totalOutputCount = 0;
+
+    if (!fragmentData?.succDramas || fragmentData.succDramas.length === 0) {
+      console.log(`[UserGrowthBatchFragments] ${sourceName}无成功跑量片段，跳过去重`);
+      return {
+        message: `${sourceName}复刻完成，成功 0 部，失败 0 部`,
+        outputPaths,
+        outputCounts,
+        failedDramas,
+        errors,
+        totalOutputCount
+      };
+    }
+
+    for (const dramaName of fragmentData.succDramas || []) {
+      if (!userGrowthData.succDramas.includes(dramaName)) {
+        console.log(`[UserGrowthBatchFragments] ${sourceName} 跳过去重，原片未成功: ${dramaName}`);
+        failedDramas.push(dramaName);
+        errors[dramaName] = '短剧原片未成功下载';
+        continue;
+      }
+
+      const userGrowthPath = userGrowthData.results[dramaName];
+      const fragmentPath = fragmentData.results[dramaName];
+      if (!fragmentPath) {
+        console.log(`[UserGrowthBatchFragments] ${sourceName} 跳过去重，跑量片段路径为空: ${dramaName}`);
+        failedDramas.push(dramaName);
+        errors[dramaName] = '跑量片段路径为空';
+        continue;
+      }
+
+      console.log(`[UserGrowthBatchFragments] 开始${sourceName}去重: ${dramaName}`);
+      console.log(`[UserGrowthBatchFragments]   全量原片: ${userGrowthPath}`);
+      console.log(`[UserGrowthBatchFragments]   ${sourceName}片段: ${fragmentPath}`);
+
+      try {
+        const dramaDedupOutputPath = path.join(outputBasePath, dramaName);
+        const dedupResult = await dedupService.processDeduplication(userGrowthPath, fragmentPath, dramaName, dramaDedupOutputPath);
+
+        if (dedupResult.success) {
+          const outputCount = this.countDedupOutputVideos(dedupResult, dramaDedupOutputPath);
+          if (outputCount > 0) {
+            outputPaths.push(dramaDedupOutputPath);
+            outputCounts[dramaName] = outputCount;
+            totalOutputCount += outputCount;
+            console.log(`[UserGrowthBatchFragments] ${sourceName}去重完成: ${dramaName}, 产出 ${outputCount} 个`);
+          } else {
+            failedDramas.push(dramaName);
+            errors[dramaName] = '去重成功但未产出视频';
+            console.error(`[UserGrowthBatchFragments] ${sourceName}去重未产出: ${dramaName}`);
+          }
+        } else {
+          failedDramas.push(dramaName);
+          errors[dramaName] = dedupResult.error || '去重失败';
+          console.error(`[UserGrowthBatchFragments] ${sourceName}去重失败: ${dramaName}, 错误: ${dedupResult.error}`);
+        }
+      } catch (error) {
+        failedDramas.push(dramaName);
+        errors[dramaName] = error.message;
+        console.error(`[UserGrowthBatchFragments] ${sourceName}去重异常: ${dramaName}, 错误: ${error.message}`);
+      }
+    }
+
+    return {
+      message: `${sourceName}复刻完成，成功 ${Object.keys(outputCounts).length} 部，失败 ${failedDramas.length} 部`,
+      outputPaths,
+      outputCounts,
+      failedDramas,
+      errors,
+      totalOutputCount
+    };
   }
 
   /**
@@ -331,7 +749,7 @@ class UserGrowthBatchFragmentsNode {
         console.log('[UserGrowthBatchFragments] 实际时间:', new Date().toLocaleString());
 
         // 重新调用 autoStartProcessing，保持所有参数不变
-        this.autoStartProcessing(params.outputPath, params.processCount, params.exportConfig, params.dedupeExpireDays, true // 仍然是定时任务
+        this.autoStartProcessing(params.outputPath, params.processCount, params.exportConfig, params.dedupeExpireDays, true, params.dramaListFilePath || '' // 仍然是定时任务
         ).catch((error) => {
           console.error('[UserGrowthBatchFragments] 重试任务执行失败:', error);
         });
@@ -375,27 +793,27 @@ class UserGrowthBatchFragmentsNode {
   }
 
   /**
-   * 检查 ByteGrowth 登录状态
+   * 检查墨攻登录状态
    */
   async checkUserGrowthLogin() {
     try {
       // 检查内存中的 Cookie
       const memoryCookies = this.cookieManager.getCookies('usergrowth');
       if (memoryCookies && memoryCookies.length > 0) {
-        console.log('[UserGrowthBatchFragments] ByteGrowth 已登录（内存）');
+        console.log('[UserGrowthBatchFragments] 墨攻已登录（内存）');
         return { success: true };
       }
 
       // 检查文件中的 Cookie
       const fileCookies = await FileCookieStore.loadCookies(this.cookieFileName);
       if (fileCookies && fileCookies.length > 0) {
-        console.log('[UserGrowthBatchFragments] ByteGrowth 已登录（文件）');
+        console.log('[UserGrowthBatchFragments] 墨攻已登录（文件）');
         this.cookieManager.saveCookies('usergrowth', fileCookies);
         return { success: true };
       }
 
-      console.log('[UserGrowthBatchFragments] ByteGrowth 未登录');
-      return { success: false, message: '未登录 ByteGrowth' };
+      console.log('[UserGrowthBatchFragments] 墨攻未登录');
+      return { success: false, message: '未登录墨攻平台' };
     } catch (error) {
       console.error('[UserGrowthBatchFragments] 检查登录状态失败:', error);
       return { success: false, message: error.message };
@@ -508,7 +926,7 @@ class UserGrowthBatchFragmentsNode {
   }
 
   /**
-   * 批量处理 ByteGrowth 平台剧目
+   * 批量处理墨攻平台剧目
    * @param {string[]} dramaNames - 剧目名称数组
    * @param {string} outputPath - 输出路径
    * @returns {Promise<Object>} { "短剧A": "filepath", "短剧B": "filepath" }
@@ -518,20 +936,22 @@ class UserGrowthBatchFragmentsNode {
     const succDramas = [];
     const failedDramas = [];
     const fragmentCounts = {}; // 新增：记录每部剧的片段数量
+    const errors = {};
 
     try {
-      console.log(`[UserGrowthBatchFragments] 开始批量处理 ByteGrowth 剧目，共 ${dramaNames.length} 部`);
+      console.log(`[UserGrowthBatchFragments] 开始批量处理墨攻剧目，共 ${dramaNames.length} 部`);
 
-      // 检查 ByteGrowth 登录状态
+      // 检查墨攻登录状态
       const loginCheck = await this.checkUserGrowthLogin();
       if (!loginCheck.success) {
-        console.error('[UserGrowthBatchFragments] ByteGrowth 未登录，跳过处理');
+        console.error('[UserGrowthBatchFragments] 墨攻未登录，跳过处理');
         // 返回空结果（不添加任何短剧）
         return {
           results: results,
           succDramas: succDramas,
-          failedDramas: failedDramas,
-          fragmentCounts: fragmentCounts
+          failedDramas: dramaNames,
+          fragmentCounts: fragmentCounts,
+          errors: Object.fromEntries(dramaNames.map((name) => [name, loginCheck.message || '墨攻平台未登录']))
         };
       }
 
@@ -540,7 +960,7 @@ class UserGrowthBatchFragmentsNode {
 
       for (let i = 0; i < dramaNames.length; i++) {
         const dramaName = dramaNames[i];
-        console.log(`[UserGrowthBatchFragments] 处理 ByteGrowth 剧目 ${i + 1}/${dramaNames.length}: ${dramaName}`);
+        console.log(`[UserGrowthBatchFragments] 处理墨攻剧目 ${i + 1}/${dramaNames.length}: ${dramaName}`);
 
         try {
           // 传入 dedupeExpireDays 参数（从全局配置中获取）
@@ -554,10 +974,12 @@ class UserGrowthBatchFragmentsNode {
             console.log(`[UserGrowthBatchFragments] 剧目 ${dramaName} 处理成功: ${result.filepath}, 片段数: ${result.fragmentCount}`);
           } else {
             failedDramas.push(dramaName);
+            errors[dramaName] = '返回了空路径';
             console.error(`[UserGrowthBatchFragments] 剧目 ${dramaName} 处理失败: 返回了空路径`);
           }
         } catch (error) {
           failedDramas.push(dramaName);
+          errors[dramaName] = error.message || String(error);
           console.error(`[UserGrowthBatchFragments] 剧目 ${dramaName} 处理异常:`, error);
           // 失败时不添加到结果中，直接跳过进入下一个循环
         }
@@ -570,17 +992,19 @@ class UserGrowthBatchFragmentsNode {
         results: results, // { "短剧A": "filepath", "短剧B": "filepath" }
         succDramas: succDramas, // ["短剧A", "短剧B"]
         failedDramas: failedDramas, // ["短剧C"]
-        fragmentCounts: fragmentCounts // { "短剧A": 12, "短剧B": 8 }
+        fragmentCounts: fragmentCounts, // { "短剧A": 12, "短剧B": 8 }
+        errors: errors
       };
     } catch (error) {
-      console.error('[UserGrowthBatchFragments] 批量处理 ByteGrowth 剧目失败:', error);
+      console.error('[UserGrowthBatchFragments] 批量处理墨攻剧目失败:', error);
       await this.safeCloseAll();
       // 即使出错也返回已处理的结果
       return {
         results: results,
         succDramas: succDramas,
         failedDramas: failedDramas,
-        fragmentCounts: fragmentCounts
+        fragmentCounts: fragmentCounts,
+        errors: errors
       };
     }
   }
@@ -597,82 +1021,36 @@ class UserGrowthBatchFragmentsNode {
     const path = require('path');
 
     try {
-      // 检查输出目录是否存在
-      if (!fs.existsSync(outputPath)) {
+      const dramaFolderPath = path.join(outputPath, this.sanitizePathName(dramaName));
+      if (!fs.existsSync(dramaFolderPath)) {
+        console.log(`[UserGrowthBatchFragments] 未找到 ${dramaName} 的已下载跑量片段文件夹`);
         return null;
       }
 
-      // 获取所有文件和文件夹
-      const items = fs.readdirSync(outputPath);
-
-      // 查找以"短剧名_"开头的文件夹
-      const matchingFolders = items.filter((item) => {
-        const itemPath = path.join(outputPath, item);
-        const isDirectory = fs.statSync(itemPath).isDirectory();
-        return isDirectory && item.startsWith(`${dramaName}_`);
+      const files = fs.readdirSync(dramaFolderPath);
+      const videoFiles = files.filter((file) => {
+        const ext = path.extname(file).toLowerCase();
+        return ['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv'].includes(ext);
       });
 
-      if (matchingFolders.length === 0) {
-        console.log(`[UserGrowthBatchFragments] 未找到 ${dramaName} 的已下载文件夹`);
-        return null;
+      console.log(`[UserGrowthBatchFragments] 检查已下载跑量片段: ${dramaFolderPath}, 视频数: ${videoFiles.length}`);
+      if (videoFiles.length >= 2) {
+        return {
+          filepath: dramaFolderPath,
+          fragmentCount: videoFiles.length
+        };
       }
 
-      console.log(`[UserGrowthBatchFragments] 找到 ${matchingFolders.length} 个匹配的文件夹: ${matchingFolders.join(', ')}`);
-
-      // 遍历所有匹配的文件夹，检查是否满足去重条件
-      for (const folderName of matchingFolders) {
-        // 提取时间戳（文件夹名格式：短剧名_时间戳）
-        const timestampMatch = folderName.match(/_(\d+)$/);
-        if (!timestampMatch) {
-          console.log(`[UserGrowthBatchFragments] 文件夹 ${folderName} 格式不正确，跳过`);
-          continue;
-        }
-
-        const timestamp = parseInt(timestampMatch[1]);
-        const folderDate = new Date(timestamp);
-        const now = new Date();
-        const daysDiff = (now.getTime() - folderDate.getTime()) / (1000 * 60 * 60 * 24);
-
-        console.log(`[UserGrowthBatchFragments] 文件夹 ${folderName}:`);
-        console.log(`[UserGrowthBatchFragments]   下载时间: ${folderDate.toLocaleString()}`);
-        console.log(`[UserGrowthBatchFragments]   距今天数: ${daysDiff.toFixed(1)} 天`);
-
-        // 判断1: 如果超过去重天数，跳过该文件夹
-        if (daysDiff > dedupeExpireDays) {
-          console.log(`[UserGrowthBatchFragments]   超过 ${dedupeExpireDays} 天，视为过期，继续检查下一个文件夹`);
-          continue;
-        }
-
-        // 判断2: 检查文件夹内的视频文件数量
-        const folderPath = path.join(outputPath, folderName);
-        const files = fs.readdirSync(folderPath);
-        const videoFiles = files.filter((file) => {
-          const ext = path.extname(file).toLowerCase();
-          return ['.mp4', '.avi', '.mov', '.mkv'].includes(ext);
-        });
-
-        const videoCount = videoFiles.length;
-        console.log(`[UserGrowthBatchFragments]   视频文件数量: ${videoCount}`);
-
-        // 判断3: 如果文件数量 >= 10，认为已下载完整
-        if (videoCount >= 2) {
-          console.log(`[UserGrowthBatchFragments]   文件数量满足条件（>= 10），跳过下载`);
-          return {
-            filepath: folderPath,
-            fragmentCount: videoCount
-          };
-        } else {
-          console.log(`[UserGrowthBatchFragments]   文件数量不足（< 10），需要重新下载`);
-        }
-      }
-
-      // 所有文件夹都不满足条件，需要重新下载
-      console.log(`[UserGrowthBatchFragments] 所有已存在文件夹均不满足去重条件，将重新下载`);
+      console.log(`[UserGrowthBatchFragments] 已存在跑量片段数量不足，需要重新下载: ${dramaName}`);
       return null;
     } catch (error) {
       console.error(`[UserGrowthBatchFragments] 检查已下载文件夹失败:`, error);
       return null;
     }
+  }
+
+  sanitizePathName(name) {
+    return String(name || '').trim().replace(/[<>:"/\\|?*]/g, '_');
   }
 
   /**
@@ -713,17 +1091,19 @@ class UserGrowthBatchFragmentsNode {
     // 步骤3: 重置筛选器（根据 Python 参考代码 _reset_filter）
     console.log('[UserGrowthBatchFragments] 重置筛选器...');
     await this.resetFilter();
+    await this.waitForBlockingOverlayToDisappear(30000, 'reset filter');
+    console.log('[UserGrowthBatchFragments] 重置完成，等待60秒后再设置筛选条件...');
+    await this.sleep(60000);
 
     // 步骤4: 操作筛选器
     await this.clickFilterButton(dramaName);
-    await new Promise((resolve) => setTimeout(resolve, 10000));
+    await this.waitForBlockingOverlayToDisappear(30000, 'apply filter');
+    await this.sleep(1000);
 
     // 步骤5: 操作排序器
     await this.clickSortButton();
-    await new Promise((resolve) => setTimeout(resolve, 5000));
-
-    // 测试 休眠
-    await new Promise((resolve) => setTimeout(resolve, 60000));
+    await this.waitForBlockingOverlayToDisappear(30000, 'apply sorter');
+    await this.sleep(3000);
 
     // 步骤6: 检查是否有结果卡片
     const hasResults = await this.checkResults();
@@ -751,7 +1131,7 @@ class UserGrowthBatchFragmentsNode {
    * @param {string} zipFilePath - zip 文件路径
    * @returns {Promise<string>} 解压后的目录路径
    */
-  async extractZipFile(zipFilePath) {
+  async extractZipFile(zipFilePath, targetDir = '') {
     const fs = require('fs');
     const path = require('path');
     const unzipper = require('unzipper');
@@ -759,12 +1139,12 @@ class UserGrowthBatchFragmentsNode {
     try {
       console.log(`[UserGrowthBatchFragments] 开始解压文件: ${zipFilePath}`);
 
-      // 获取 zip 文件的目录和文件名（不含扩展名）
-      const zipDir = path.dirname(zipFilePath);
-      const zipBasename = path.basename(zipFilePath, '.zip');
-
-      // 创建解压目标目录
-      const extractPath = path.join(zipDir, zipBasename);
+      let extractPath = targetDir;
+      if (!extractPath) {
+        const zipDir = path.dirname(zipFilePath);
+        const zipBasename = path.basename(zipFilePath, '.zip');
+        extractPath = path.join(zipDir, zipBasename);
+      }
 
       if (!fs.existsSync(extractPath)) {
         fs.mkdirSync(extractPath, { recursive: true });
@@ -858,6 +1238,356 @@ class UserGrowthBatchFragmentsNode {
       console.error('[UserGrowthBatchFragments] 点击进入或墨攻AI失败:', error);
       return false;
     }
+  }
+
+  sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async waitForBlockingOverlayToDisappear(timeout = 30000, reason = 'interaction') {
+    if (!this.page) {
+      return;
+    }
+
+    try {
+      await this.page.waitForFunction(
+        () => {
+          const selectors = ['#overlay', '#task-overlay', '.overlay-M9HUOF', '.arco-spin-mask'];
+
+          const isBlocking = (element) => {
+            if (!element) {
+              return false;
+            }
+
+            const style = window.getComputedStyle(element);
+            if (
+              style.display === 'none' ||
+              style.visibility === 'hidden' ||
+              style.pointerEvents === 'none' ||
+              Number(style.opacity || '1') === 0
+            ) {
+              return false;
+            }
+
+            const rect = element.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+          };
+
+          for (const selector of selectors) {
+            const elements = document.querySelectorAll(selector);
+            for (const element of elements) {
+              if (isBlocking(element)) {
+                return false;
+              }
+            }
+          }
+
+          return true;
+        },
+        null,
+        { timeout }
+      );
+    } catch (error) {
+      console.warn(`[UserGrowthBatchFragments] overlay wait timed out before ${reason}: ${error.message}`);
+    }
+  }
+
+  async safeElementClick(elementOrSelector, label, options = {}) {
+    const {
+      timeout = 10000,
+      postDelay = 500,
+      waitForSelectorOptions = { state: 'visible' },
+      overlayTimeout = 30000,
+      allowJsFallback = true
+    } = options;
+
+    let elementHandle = elementOrSelector;
+    if (typeof elementOrSelector === 'string') {
+      elementHandle = await this.page.waitForSelector(elementOrSelector, {
+        timeout,
+        ...waitForSelectorOptions
+      });
+    }
+
+    if (!elementHandle) {
+      throw new Error(`${label} not found`);
+    }
+
+    await this.waitForBlockingOverlayToDisappear(overlayTimeout, `${label} click`);
+
+    try {
+      await elementHandle.scrollIntoViewIfNeeded();
+    } catch {}
+
+    try {
+      await elementHandle.click({ timeout });
+    } catch (error) {
+      const message = error?.message || String(error);
+      const shouldFallback =
+        allowJsFallback &&
+        (message.includes('intercepts pointer events') || message.includes('not stable') || message.includes('Timeout'));
+
+      if (!shouldFallback) {
+        throw error;
+      }
+
+      console.warn(`[UserGrowthBatchFragments] falling back to JS click for ${label}: ${message}`);
+      await this.page.evaluate((element) => {
+        element.scrollIntoView({ block: 'center', inline: 'center' });
+        element.click();
+      }, elementHandle);
+    }
+
+    if (postDelay > 0) {
+      await this.sleep(postDelay);
+    }
+
+    await this.waitForBlockingOverlayToDisappear(overlayTimeout, `${label} post-click`);
+    return elementHandle;
+  }
+
+  async waitForDownloadEvent(timeout = 15000) {
+    try {
+      return await this.page.waitForEvent('download', { timeout });
+    } catch (error) {
+      const message = error?.message || String(error);
+      if ((error?.name || '') === 'TimeoutError' || message.includes('Timeout')) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  async handleTaskCreationSuccessModal(timeout = 12000) {
+    if (!this.page) {
+      return { handled: false, action: 'none' };
+    }
+
+    try {
+      const modal = await this.page.waitForSelector('.arco-modal-content:has-text("任务创建成功")', {
+        timeout,
+        state: 'visible'
+      });
+      if (!modal) {
+        return { handled: false, action: 'none' };
+      }
+
+      const modalText = await modal.evaluate((element) => element.textContent || '');
+      if (!modalText.includes('任务创建成功')) {
+        return { handled: false, action: 'none' };
+      }
+
+      console.log('[UserGrowthBatchFragments] 检测到任务创建成功弹窗，准备处理任务详情入口...');
+
+      const detailButton = await modal.$('button:has-text("查看任务详情")');
+      if (detailButton) {
+        await this.safeElementClick(detailButton, '查看任务详情按钮', {
+          timeout: 10000,
+          postDelay: 1000
+        });
+        await this.sleep(1000);
+        await this.waitForBlockingOverlayToDisappear(30000, 'open task detail');
+        return { handled: true, action: 'detail' };
+      }
+
+      const taskListTarget = await modal.$('.target');
+      if (taskListTarget) {
+        await this.safeElementClick(taskListTarget, '任务列表入口', {
+          timeout: 8000,
+          postDelay: 1000
+        });
+        await this.sleep(1000);
+        await this.waitForBlockingOverlayToDisappear(30000, 'open task list');
+        return { handled: true, action: 'task-list' };
+      }
+
+      const closeButton = await modal.$('.arco-modal-close-icon') || (await this.page.$('.arco-modal-close-icon'));
+      if (closeButton) {
+        await this.safeElementClick(closeButton, '任务成功弹窗关闭按钮', {
+          timeout: 5000,
+          postDelay: 500
+        });
+        return { handled: true, action: 'close' };
+      }
+
+      console.warn('[UserGrowthBatchFragments] 任务创建成功弹窗存在，但未找到可操作按钮');
+      return { handled: false, action: 'none' };
+    } catch (error) {
+      const message = error?.message || String(error);
+      if ((error?.name || '') === 'TimeoutError' || message.includes('Timeout')) {
+        return { handled: false, action: 'none' };
+      }
+      console.warn(`[UserGrowthBatchFragments] 处理任务创建成功弹窗失败: ${message}`);
+      return { handled: false, action: 'none' };
+    }
+  }
+
+  async findVisibleTaskDownloadAction() {
+    const selectors = [
+      'button:has-text("下载结果")',
+      'button:has-text("下载文件")',
+      'button:has-text("下载")',
+      'a:has-text("下载结果")',
+      'a:has-text("下载文件")',
+      'a:has-text("下载")',
+      '[role="button"]:has-text("下载结果")',
+      '[role="button"]:has-text("下载文件")',
+      '[role="button"]:has-text("下载")',
+      'a[download]'
+    ];
+
+    for (const selector of selectors) {
+      const element = await this.page.$(selector);
+      if (!element) {
+        continue;
+      }
+
+      const isVisible = await element.evaluate((node) => {
+        const style = window.getComputedStyle(node);
+        const rect = node.getBoundingClientRect();
+        const isDisabled =
+          node.hasAttribute('disabled') ||
+          node.getAttribute('aria-disabled') === 'true' ||
+          node.classList.contains('disabled');
+
+        return (
+          style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          style.pointerEvents !== 'none' &&
+          rect.width > 0 &&
+          rect.height > 0 &&
+          !isDisabled
+        );
+      });
+
+      if (isVisible) {
+        return element;
+      }
+    }
+
+    return null;
+  }
+
+  async persistPlaywrightDownload(download, dramaName, dramaDir) {
+    const fs = require('fs');
+    const path = require('path');
+
+    const failure = await download.failure();
+    if (failure) {
+      throw new Error(`浏览器下载失败: ${failure}`);
+    }
+
+    const downloadPath = await download.path();
+    let suggestedFilename = '';
+    try {
+      suggestedFilename = download.suggestedFilename();
+    } catch {}
+    if (!downloadPath) {
+      throw new Error('浏览器未返回下载临时文件');
+    }
+
+    console.log(`[UserGrowthBatchFragments] 下载事件已触发，临时路径: ${downloadPath}`);
+
+    const timestamp = Date.now();
+    const ext = path.extname(suggestedFilename || '') || '.zip';
+    const filename = `${this.sanitizePathName(dramaName)}_${timestamp}${ext}`;
+    const filepath = path.join(dramaDir, filename);
+    console.log(`[UserGrowthBatchFragments] 目标文件路径: ${filepath}`);
+
+    let lastSize = -1;
+    let stableCount = 0;
+    const pollIntervalMs = 3000;
+
+    console.log('[UserGrowthBatchFragments] 等待下载完成（不限制时间）...');
+    while (true) {
+      try {
+        const stats = fs.statSync(downloadPath);
+        const currentSize = stats.size;
+
+        if (currentSize === lastSize && lastSize > 0) {
+          stableCount++;
+          if (stableCount >= 2) {
+            console.log(`[UserGrowthBatchFragments] 下载完成！最终大小: ${(currentSize / 1024 / 1024).toFixed(2)} MB`);
+            break;
+          }
+        } else {
+          stableCount = 0;
+          lastSize = currentSize;
+          console.log(`[UserGrowthBatchFragments] 下载中... ${(currentSize / 1024 / 1024).toFixed(2)} MB`);
+        }
+      } catch (error) {
+        // 文件还不存在或被锁住，继续等待
+      }
+
+      await this.sleep(pollIntervalMs);
+    }
+
+    await this.sleep(2000);
+
+    if (!fs.existsSync(downloadPath)) {
+      throw new Error('下载文件不存在');
+    }
+
+    fs.copyFileSync(downloadPath, filepath);
+    console.log(`[UserGrowthBatchFragments] 文件已保存到: ${filepath}`);
+
+    try {
+      fs.unlinkSync(downloadPath);
+    } catch {}
+
+    const finalStats = fs.statSync(filepath);
+    console.log(`[UserGrowthBatchFragments] 文件大小: ${(finalStats.size / 1024 / 1024).toFixed(2)} MB`);
+
+    if (filepath.toLowerCase().endsWith('.zip')) {
+      return await this.extractZipFile(filepath, dramaDir);
+    }
+
+    return filepath;
+  }
+
+  async waitForTaskDetailDownload(dramaName, dramaDir, timeout = 600000) {
+    const deadline = Date.now() + timeout;
+    console.log('[UserGrowthBatchFragments] 开始等待任务详情页中的下载结果...');
+
+    while (Date.now() < deadline) {
+      await this.waitForBlockingOverlayToDisappear(30000, 'task detail polling');
+
+      const immediateDownload = await this.waitForDownloadEvent(1500);
+      if (immediateDownload) {
+        return await this.persistPlaywrightDownload(immediateDownload, dramaName, dramaDir);
+      }
+
+      const downloadAction = await this.findVisibleTaskDownloadAction();
+      if (downloadAction) {
+        console.log('[UserGrowthBatchFragments] 找到任务详情页下载入口，准备触发下载...');
+        const downloadPromise = this.waitForDownloadEvent(45000);
+        await this.safeElementClick(downloadAction, '任务详情下载按钮', {
+          timeout: 8000,
+          postDelay: 1000
+        });
+
+        const download = await downloadPromise;
+        if (download) {
+          return await this.persistPlaywrightDownload(download, dramaName, dramaDir);
+        }
+      }
+
+      const refreshButton = await this.page.$('button:has-text("刷新"), [role="button"]:has-text("刷新")');
+      if (refreshButton) {
+        try {
+          await this.safeElementClick(refreshButton, '任务详情刷新按钮', {
+            timeout: 5000,
+            postDelay: 1000
+          });
+        } catch (error) {
+          console.log(`[UserGrowthBatchFragments] 刷新任务详情失败，继续等待: ${error.message}`);
+        }
+      }
+
+      await this.sleep(5000);
+    }
+
+    throw new Error('任务详情页等待下载结果超时');
   }
 
   /**
@@ -967,36 +1697,21 @@ class UserGrowthBatchFragmentsNode {
     try {
       console.log('[UserGrowthBatchFragments] 重置筛选器...');
 
-      // 点击筛选器按钮
-      const filterButton = await this.page.waitForSelector('button:has-text("筛选器")', { timeout: 10000 });
-      if (filterButton) {
-        await filterButton.click();
-        console.log('[UserGrowthBatchFragments] 筛选器已打开');
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+      await this.safeElementClick('button:has-text("筛选器")', '筛选器按钮', { timeout: 10000, postDelay: 1000 });
+      console.log('[UserGrowthBatchFragments] 筛选器已打开');
 
-        // 点击重置按钮
-        try {
-          const resetButton = await this.page.waitForSelector('button:has-text("重置")', { timeout: 5000 });
-          if (resetButton) {
-            await resetButton.click();
-            console.log('[UserGrowthBatchFragments] 筛选器已重置');
-            await new Promise((resolve) => setTimeout(resolve, 500));
-          }
-        } catch (e) {
-          console.log('[UserGrowthBatchFragments] 未找到重置按钮:', e.message);
-        }
+      try {
+        await this.safeElementClick('button:has-text("重置")', '重置按钮', { timeout: 5000, postDelay: 500 });
+        console.log('[UserGrowthBatchFragments] 筛选器已重置');
+      } catch (e) {
+        console.log('[UserGrowthBatchFragments] 未找到重置按钮:', e.message);
+      }
 
-        // 点击确定关闭筛选器
-        try {
-          const confirmButton = await this.page.waitForSelector('button:has-text("确定")', { timeout: 3000 });
-          if (confirmButton) {
-            await confirmButton.click();
-            console.log('[UserGrowthBatchFragments] 筛选器已关闭');
-            await new Promise((resolve) => setTimeout(resolve, 30000));
-          }
-        } catch (e) {
-          console.log('[UserGrowthBatchFragments] 关闭筛选器跳过:', e.message);
-        }
+      try {
+        await this.safeElementClick('button:has-text("确定")', '筛选器确定按钮', { timeout: 3000, postDelay: 800 });
+        console.log('[UserGrowthBatchFragments] 筛选器已关闭');
+      } catch (e) {
+        console.log('[UserGrowthBatchFragments] 关闭筛选器跳过:', e.message);
       }
     } catch (error) {
       console.error('[UserGrowthBatchFragments] 重置筛选器失败:', error);
@@ -1011,76 +1726,47 @@ class UserGrowthBatchFragmentsNode {
     try {
       console.log('[UserGrowthBatchFragments] 点击筛选器...');
 
-      // 1. 点击筛选器按钮
-      const filterButton = await this.page.waitForSelector('button:has-text("筛选器")', { timeout: 30000 });
-      if (!filterButton) {
-        console.warn('[UserGrowthBatchFragments] 未找到筛选器按钮');
-        return;
-      }
-      await filterButton.click();
+      await this.safeElementClick('button:has-text("筛选器")', '筛选器按钮', { timeout: 30000, postDelay: 1000 });
       console.log('[UserGrowthBatchFragments] 筛选器按钮已点击');
-      await new Promise((resolve) => setTimeout(resolve, 1000));
 
       // ========== 第一个条件：创建日期 ==========
 
-      // 2. 点击"添加条件"
       console.log('[UserGrowthBatchFragments] 点击添加条件（创建日期）...');
-      const addConditionBtn = await this.page.waitForSelector('button:has-text("添加条件")', { timeout: 10000 });
-      if (!addConditionBtn) {
-        console.warn('[UserGrowthBatchFragments] 未找到添加条件按钮');
-        return;
-      }
-      await addConditionBtn.click();
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await this.safeElementClick('button:has-text("添加条件")', '添加条件按钮-创建日期', { timeout: 10000, postDelay: 500 });
 
-      // 2.1 点击下拉菜单中的"添加条件"
       console.log('[UserGrowthBatchFragments] 点击下拉菜单中的添加条件...');
       try {
-        const dropdownItem = await this.page.waitForSelector('.arco-dropdown-menu-item:has-text("添加条件")', { timeout: 5000 });
-        if (dropdownItem) {
-          await dropdownItem.click();
-          console.log('[UserGrowthBatchFragments] 已点击下拉菜单中的添加条件');
-          await new Promise((resolve) => setTimeout(resolve, 500));
-        }
+        await this.safeElementClick('.arco-dropdown-menu-item:has-text("添加条件")', '下拉添加条件-创建日期', {
+          timeout: 5000,
+          postDelay: 500
+        });
+        console.log('[UserGrowthBatchFragments] 已点击下拉菜单中的添加条件');
       } catch (e) {
         console.log('[UserGrowthBatchFragments] 未找到下拉菜单项:', e.message);
       }
 
-      // 2.2 选择筛选项"创建日期"
       console.log('[UserGrowthBatchFragments] 选择创建日期...');
-      const selectInput = await this.page.waitForSelector('.arco-select-view:has(input[placeholder="选择筛选项"])', { timeout: 10000 });
-      if (!selectInput) {
-        console.warn('[UserGrowthBatchFragments] 未找到筛选项下拉框');
-        return;
-      }
-      await selectInput.click();
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      const createTimeOption = await this.page.waitForSelector('li.arco-select-option:has-text("创建日期")', { timeout: 10000 });
-      if (!createTimeOption) {
-        console.warn('[UserGrowthBatchFragments] 未找到创建日期选项');
-        return;
-      }
-      await createTimeOption.click();
+      await this.safeElementClick('.arco-select-view:has(input[placeholder="选择筛选项"])', '筛选项下拉框-创建日期', {
+        timeout: 10000,
+        postDelay: 500
+      });
+      await this.safeElementClick('li.arco-select-option:has-text("创建日期")', '创建日期选项', {
+        timeout: 10000,
+        postDelay: 500
+      });
       console.log('[UserGrowthBatchFragments] 已选择创建日期');
-      await new Promise((resolve) => setTimeout(resolve, 500));
 
-      // 2.3 选择操作"介于"
       console.log('[UserGrowthBatchFragments] 选择日期操作...');
-      const operationSelect = await this.page.waitForSelector('.arco-select-view:has(input[placeholder="选择操作"])', { timeout: 10000 });
-      if (operationSelect) {
-        await operationSelect.click();
-        await new Promise((resolve) => setTimeout(resolve, 500));
+      await this.safeElementClick('.arco-select-view:has(input[placeholder="选择操作"])', '操作下拉框-创建日期', {
+        timeout: 10000,
+        postDelay: 500
+      });
+      await this.safeElementClick('li.arco-select-option:has-text("介于")', '介于选项', {
+        timeout: 5000,
+        postDelay: 500
+      });
+      console.log('[UserGrowthBatchFragments] 已选择介于');
 
-        const betweenOption = await this.page.waitForSelector('li.arco-select-option:has-text("介于")', { timeout: 5000 });
-        if (betweenOption) {
-          await betweenOption.click();
-          console.log('[UserGrowthBatchFragments] 已选择介于');
-          await new Promise((resolve) => setTimeout(resolve, 500));
-        }
-      }
-
-      // 2.4 填写日期范围
       const today = new Date();
       const endDate = new Date(today);
       endDate.setDate(endDate.getDate() - 1); // 昨天
@@ -1100,96 +1786,79 @@ class UserGrowthBatchFragmentsNode {
       console.log(`[UserGrowthBatchFragments] 填写日期: ${startDateStr} 至 ${endDateStr}`);
 
       const startDateInput = await this.page.waitForSelector('input[placeholder="开始日期"]', { timeout: 10000 });
-      if (startDateInput) {
-        await startDateInput.click();
-        await startDateInput.fill(startDateStr);
-        await new Promise((resolve) => setTimeout(resolve, 300));
+      if (!startDateInput) {
+        throw new Error('未找到开始日期输入框');
       }
+      await this.safeElementClick(startDateInput, '开始日期输入框', { timeout: 5000, postDelay: 100 });
+      await startDateInput.fill(startDateStr);
+      await this.sleep(300);
 
       const endDateInput = await this.page.waitForSelector('input[placeholder="结束日期"]', { timeout: 10000 });
-      if (endDateInput) {
-        await endDateInput.click();
-        await endDateInput.fill(endDateStr);
-        await endDateInput.press('Enter');
-        console.log('[UserGrowthBatchFragments] 已填入日期');
-        await new Promise((resolve) => setTimeout(resolve, 300));
+      if (!endDateInput) {
+        throw new Error('未找到结束日期输入框');
       }
+      await this.safeElementClick(endDateInput, '结束日期输入框', { timeout: 5000, postDelay: 100 });
+      await endDateInput.fill(endDateStr);
+      await endDateInput.press('Enter');
+      console.log('[UserGrowthBatchFragments] 已填入日期');
+      await this.sleep(300);
 
       // ========== 第二个条件：文件名 ==========
 
-      // 3. 再次点击"添加条件"
       console.log('[UserGrowthBatchFragments] 点击添加条件（文件名）...');
-      const addConditionBtn2 = await this.page.waitForSelector('button:has-text("添加条件")', { timeout: 10000 });
-      if (addConditionBtn2) {
-        await addConditionBtn2.click();
-        await new Promise((resolve) => setTimeout(resolve, 500));
-      }
+      await this.safeElementClick('button:has-text("添加条件")', '添加条件按钮-文件名', { timeout: 10000, postDelay: 500 });
 
-      // 3.0 点击下拉菜单中的"添加条件"
       console.log('[UserGrowthBatchFragments] 点击下拉菜单中的添加条件（第二个）...');
       try {
-        const dropdownItem2 = await this.page.waitForSelector('.arco-dropdown-menu-item:has-text("添加条件")', { timeout: 5000 });
-        if (dropdownItem2) {
-          await dropdownItem2.click();
-          console.log('[UserGrowthBatchFragments] 已点击下拉菜单中的添加条件（第二个）');
-          await new Promise((resolve) => setTimeout(resolve, 500));
-        }
+        await this.safeElementClick('.arco-dropdown-menu-item:has-text("添加条件")', '下拉添加条件-文件名', {
+          timeout: 5000,
+          postDelay: 500
+        });
+        console.log('[UserGrowthBatchFragments] 已点击下拉菜单中的添加条件（第二个）');
       } catch (e) {
         console.log('[UserGrowthBatchFragments] 未找到下拉菜单项:', e.message);
       }
 
-      // 3.1 选择筛选项"文件名"
       console.log('[UserGrowthBatchFragments] 选择文件名...');
-      const filenameSelect = await this.page.waitForSelector('.arco-select-view:has(input[placeholder="选择筛选项"])', { timeout: 10000 });
-      if (filenameSelect) {
-        await filenameSelect.click();
-        await new Promise((resolve) => setTimeout(resolve, 500));
+      await this.safeElementClick('.arco-select-view:has(input[placeholder="选择筛选项"])', '筛选项下拉框-文件名', {
+        timeout: 10000,
+        postDelay: 500
+      });
+      await this.safeElementClick('li.arco-select-option:has-text("文件名")', '文件名选项', {
+        timeout: 10000,
+        postDelay: 500
+      });
+      console.log('[UserGrowthBatchFragments] 已选择文件名');
 
-        const filenameOption = await this.page.waitForSelector('li.arco-select-option:has-text("文件名")', { timeout: 10000 });
-        if (filenameOption) {
-          await filenameOption.click();
-          console.log('[UserGrowthBatchFragments] 已选择文件名');
-          await new Promise((resolve) => setTimeout(resolve, 500));
+      console.log('[UserGrowthBatchFragments] 选择包含...');
+      await this.safeElementClick('.arco-select-view:has(input[placeholder="选择操作"])', '操作下拉框-文件名', {
+        timeout: 10000,
+        postDelay: 500
+      });
+      await this.safeElementClick('li.arco-select-option:has-text("包含")', '包含选项', {
+        timeout: 10000,
+        postDelay: 500
+      });
+      console.log('[UserGrowthBatchFragments] 已选择包含');
 
-          // 3.2 选择"包含"操作
-          console.log('[UserGrowthBatchFragments] 选择包含...');
-          const operationSelect2 = await this.page.waitForSelector('.arco-select-view:has(input[placeholder="选择操作"])', { timeout: 10000 });
-          if (operationSelect2) {
-            await operationSelect2.click();
-            await new Promise((resolve) => setTimeout(resolve, 500));
-
-            const containsOption = await this.page.waitForSelector('li.arco-select-option:has-text("包含")', { timeout: 10000 });
-            if (containsOption) {
-              await containsOption.click();
-              console.log('[UserGrowthBatchFragments] 已选择包含');
-              await new Promise((resolve) => setTimeout(resolve, 500));
-            }
-          }
-        }
-      }
-
-      // 3.3 输入关键词
       console.log(`[UserGrowthBatchFragments] 输入关键词: ${dramaName}`);
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await this.sleep(500);
       try {
         const textInput = await this.page.waitForSelector('input[placeholder="请输入"]', { timeout: 5000 });
-        if (textInput) {
-          await textInput.fill(dramaName);
-          console.log(`[UserGrowthBatchFragments] 已输入关键词: ${dramaName}`);
-          await new Promise((resolve) => setTimeout(resolve, 500));
+        if (!textInput) {
+          throw new Error('未找到关键词输入框');
         }
+        await this.safeElementClick(textInput, '关键词输入框', { timeout: 5000, postDelay: 100 });
+        await textInput.fill(dramaName);
+        console.log(`[UserGrowthBatchFragments] 已输入关键词: ${dramaName}`);
+        await this.sleep(500);
       } catch (e) {
         console.log('[UserGrowthBatchFragments] 输入关键词失败:', e.message);
       }
 
-      // 4. 点击确定按钮
       console.log('[UserGrowthBatchFragments] 点击确定...');
-      const confirmButton = await this.page.waitForSelector('button:has-text("确定")', { timeout: 10000 });
-      if (confirmButton) {
-        await confirmButton.click();
-        console.log('[UserGrowthBatchFragments] 筛选器设置完成');
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
+      await this.safeElementClick('button:has-text("确定")', '筛选器确定按钮', { timeout: 10000, postDelay: 1000 });
+      console.log('[UserGrowthBatchFragments] 筛选器设置完成');
     } catch (error) {
       console.error('[UserGrowthBatchFragments] 筛选器操作失败:', error);
       throw error;
@@ -1205,54 +1874,39 @@ class UserGrowthBatchFragmentsNode {
     try {
       console.log('[UserGrowthBatchFragments] 点击排序器...');
 
-      // 步骤1: 点击排序器下拉框
       console.log('[UserGrowthBatchFragments] 点击排序器下拉框...');
-      const sorterButton = await this.page.waitForSelector('.horizontal-sort-select .arco-select', { timeout: 10000 });
-      if (!sorterButton) {
-        throw new Error('未找到排序器按钮');
-      }
-      await sorterButton.click();
+      await this.safeElementClick('.horizontal-sort-select .arco-select', '排序器按钮', {
+        timeout: 10000,
+        postDelay: 1000
+      });
       console.log('[UserGrowthBatchFragments] 排序器按钮已点击');
-      await new Promise((resolve) => setTimeout(resolve, 1000));
 
-      // 步骤2: 等待下拉面板出现
       console.log('[UserGrowthBatchFragments] 等待下拉面板...');
       const popup = await this.page.waitForSelector('.arco-select-popup-inner.sort-select-dropdown', { timeout: 5000 });
       if (!popup) {
         throw new Error('未找到下拉面板');
       }
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await this.sleep(500);
 
-      // 步骤3: 选择维度 - 点击"消耗"
       console.log('[UserGrowthBatchFragments] 选择维度: 消耗');
       try {
-        const consumeOption = await this.page.waitForSelector(
-          '.arco-select-popup-inner .value-content:first-child button:has-text("消耗")',
-          { timeout: 5000 }
-        );
-        if (consumeOption) {
-          await consumeOption.click();
-          console.log('[UserGrowthBatchFragments] 已点击消耗');
-          await new Promise((resolve) => setTimeout(resolve, 500));
-        }
+        await this.safeElementClick('.arco-select-popup-inner .value-content:first-child button:has-text("消耗")', '排序维度-消耗', {
+          timeout: 5000,
+          postDelay: 500
+        });
+        console.log('[UserGrowthBatchFragments] 已点击消耗');
       } catch (e) {
         console.log('[UserGrowthBatchFragments] 点击消耗失败，继续执行...');
       }
 
-      // 步骤4: 选择时间范围 - 点击"近3天"
       console.log('[UserGrowthBatchFragments] 选择时间范围: 近3天');
       try {
-        await new Promise((resolve) => setTimeout(resolve, 500));
-
-        // 定位排序下拉框
+        await this.sleep(500);
         const dropdown = await this.page.waitForSelector('.arco-select-popup-inner.sort-select-dropdown', { timeout: 5000 });
-
         if (dropdown) {
-          // 获取所有 div.value-content，第二个是时间范围列
           const valueContents = await dropdown.$$('div.value-content');
-
           if (valueContents.length >= 2) {
-            const timeGroup = valueContents[1]; // 第二列是时间范围
+            const timeGroup = valueContents[1];
             const buttons = await timeGroup.$$('button.select-option');
 
             let targetBtn = null;
@@ -1265,16 +1919,10 @@ class UserGrowthBatchFragmentsNode {
             }
 
             if (targetBtn) {
-              // 使用 JavaScript 点击按钮元素
-              await this.page.evaluate((btn) => {
-                btn.scrollIntoView({ block: 'center' });
-                btn.click();
-              }, targetBtn);
-              await new Promise((resolve) => setTimeout(resolve, 500));
-              await this.page.evaluate((btn) => {
-                btn.click();
-              }, targetBtn);
-              await new Promise((resolve) => setTimeout(resolve, 1000));
+              await this.safeElementClick(targetBtn, '排序时间范围-近3天', {
+                timeout: 5000,
+                postDelay: 1000
+              });
             } else {
               console.log('[UserGrowthBatchFragments] 未找到时间选项近3天');
             }
@@ -1284,26 +1932,22 @@ class UserGrowthBatchFragmentsNode {
         console.log(`[UserGrowthBatchFragments] 点击近3天失败: ${e.message}`);
       }
 
-      // 步骤5: 选择排序方向 - 点击"降序"
       console.log('[UserGrowthBatchFragments] 选择排序方向: 降序');
       try {
-        const orderOption = await this.page.waitForSelector(
-          '.arco-select-popup-inner .value-content:nth-child(5) button:has-text("降序")',
-          { timeout: 5000 }
-        );
-        if (orderOption) {
-          await orderOption.click();
-          console.log('[UserGrowthBatchFragments] 已点击降序');
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        }
+        await this.safeElementClick('.arco-select-popup-inner .value-content:nth-child(5) button:has-text("降序")', '排序方向-降序', {
+          timeout: 5000,
+          postDelay: 1000
+        });
+        console.log('[UserGrowthBatchFragments] 已点击降序');
       } catch (e) {
         console.log('[UserGrowthBatchFragments] 点击降序失败，继续执行...');
       }
 
-      // 步骤6: 按 ESC 退出排序器
       console.log('[UserGrowthBatchFragments] 按 ESC 退出排序器...');
       await this.page.keyboard.press('Escape');
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await this.sleep(500);
+      await this.waitForBlockingOverlayToDisappear(30000, 'close sorter');
+      await this.sleep(1500);
 
       console.log('[UserGrowthBatchFragments] 排序器设置完成');
     } catch (error) {
@@ -1344,20 +1988,17 @@ class UserGrowthBatchFragmentsNode {
   async selectMaterials(count = 20) {
     try {
       console.log(`[UserGrowthBatchFragments] 开始选择 ${count} 个素材...`);
+      await this.waitForBlockingOverlayToDisappear(30000, 'select materials');
 
-      // 查找所有复选框图标：墨攻平台使用 .waterfall-item .check-icon
       const checkIcons = await this.page.$$('.waterfall-item .check-icon');
       console.log(`[UserGrowthBatchFragments] 找到 ${checkIcons.length} 个素材`);
 
-      // 选择前 count 个素材
       const selectCount = Math.min(count, checkIcons.length);
 
       for (let i = 0; i < selectCount; i++) {
         try {
-          // 点击复选框图标进行选择
-          await checkIcons[i].click();
+          await this.safeElementClick(checkIcons[i], `素材勾选-${i + 1}`, { timeout: 5000, postDelay: 200 });
           console.log(`[UserGrowthBatchFragments] 已选择第 ${i + 1} 个素材`);
-          await new Promise((resolve) => setTimeout(resolve, 200)); // 短暂延迟
         } catch (error) {
           console.error(`[UserGrowthBatchFragments] 选择第 ${i + 1} 个素材失败:`, error);
         }
@@ -1365,12 +2006,12 @@ class UserGrowthBatchFragmentsNode {
 
       console.log(`[UserGrowthBatchFragments] 成功选择 ${selectCount} 个素材`);
 
-      // 滚动到页面顶部，确保下载按钮可见
       console.log('[UserGrowthBatchFragments] 滚动到页面顶部...');
       await this.page.evaluate(() => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       });
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await this.sleep(2000);
+      await this.waitForBlockingOverlayToDisappear(30000, 'scroll to top after selection');
 
       return selectCount;
     } catch (error) {
@@ -1389,24 +2030,25 @@ class UserGrowthBatchFragmentsNode {
 
     try {
       console.log('[UserGrowthBatchFragments] 开始下载素材...');
+      const dramaDir = path.join(outputPath, this.sanitizePathName(dramaName));
 
       // 确保输出目录存在
       if (!fs.existsSync(outputPath)) {
         fs.mkdirSync(outputPath, { recursive: true });
         console.log(`[UserGrowthBatchFragments] 创建输出目录: ${outputPath}`);
       }
-
-      // 步骤1: 点击"下载"按钮
-      console.log('[UserGrowthBatchFragments] 点击下载按钮...');
-      const downloadBtn = await this.page.waitForSelector('button:has(svg.ug_menu-icon-magoai_download)', { timeout: 10000 });
-      if (!downloadBtn) {
-        throw new Error('未找到下载按钮');
+      if (!fs.existsSync(dramaDir)) {
+        fs.mkdirSync(dramaDir, { recursive: true });
+        console.log(`[UserGrowthBatchFragments] 创建剧目目录: ${dramaDir}`);
       }
-      await downloadBtn.click();
-      console.log('[UserGrowthBatchFragments] 下载按钮已点击');
-      await new Promise((resolve) => setTimeout(resolve, 1000));
 
-      // 步骤2: 点击"原始下载"（限定在下拉菜单范围内，避免点到审核信息下载等）
+      console.log('[UserGrowthBatchFragments] 点击下载按钮...');
+      await this.safeElementClick('button:has(svg.ug_menu-icon-magoai_download)', '下载按钮', {
+        timeout: 10000,
+        postDelay: 1000
+      });
+      console.log('[UserGrowthBatchFragments] 下载按钮已点击');
+
       console.log('[UserGrowthBatchFragments] 点击原始下载...');
       const originalDownloadMenuItem = await this.page.waitForSelector(
         '.arco-dropdown-menu .arco-dropdown-menu-item:has-text("原始下载")',
@@ -1417,75 +2059,35 @@ class UserGrowthBatchFragmentsNode {
       }
 
       console.log('[UserGrowthBatchFragments] 找到原始下载菜单项，准备触发下载...');
+      const directDownloadPromise = this.waitForDownloadEvent(8000);
+      await this.safeElementClick(originalDownloadMenuItem, '原始下载菜单项', {
+        timeout: 8000,
+        postDelay: 500
+      });
+      console.log('[UserGrowthBatchFragments] 已点击原始下载，开始判断下载链路...');
 
-      // 先启动下载监听，再点击
-      const downloadPromise = this.page.waitForEvent('download', { timeout: 0 });
-      await originalDownloadMenuItem.click();
-      console.log('[UserGrowthBatchFragments] 已点击原始下载，等待下载事件...');
-
-      const download = await downloadPromise;
-      const downloadPath = await download.path();
-      const suggestedFilename = await download.suggestedFilename();
-      console.log(`[UserGrowthBatchFragments] 下载事件已触发，临时路径: ${downloadPath}`);
-
-      // 生成目标文件路径
-      const timestamp = Date.now();
-      const filename = `${dramaName}_${timestamp}.zip`;
-      const filepath = path.join(outputPath, filename);
-      console.log(`[UserGrowthBatchFragments] 目标文件路径: ${filepath}`);
-
-      // 步骤3: 轮询等待下载真正完成（文件大小稳定，不限制时间）
-      console.log('[UserGrowthBatchFragments] 等待下载完成（不限制时间）...');
-      let lastSize = -1;
-      let stableCount = 0;
-      const pollIntervalMs = 3000;
-
-      while (true) {
-        try {
-          const stats = fs.statSync(downloadPath);
-          const currentSize = stats.size;
-
-          if (currentSize === lastSize && lastSize > 0) {
-            stableCount++;
-            if (stableCount >= 2) {
-              console.log(`[UserGrowthBatchFragments] 下载完成！最终大小: ${(currentSize / 1024 / 1024).toFixed(2)} MB`);
-              break;
-            }
-          } else {
-            stableCount = 0;
-            lastSize = currentSize;
-            console.log(`[UserGrowthBatchFragments] 下载中... ${(currentSize / 1024 / 1024).toFixed(2)} MB`);
-          }
-        } catch (e) {
-          // 文件还不存在或被锁住，继续等待
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+      const directDownload = await directDownloadPromise;
+      if (directDownload) {
+        console.log('[UserGrowthBatchFragments] 检测到传统浏览器直接下载链路');
+        return await this.persistPlaywrightDownload(directDownload, dramaName, dramaDir);
       }
 
-      // 等待一小段时间确保文件完全写入
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-
-      // 步骤4: 复制文件到目标路径
-      if (fs.existsSync(downloadPath)) {
-        fs.copyFileSync(downloadPath, filepath);
-        console.log(`[UserGrowthBatchFragments] 文件已保存到: ${filepath}`);
-
-        // 删除临时文件
-        try {
-          fs.unlinkSync(downloadPath);
-        } catch {}
-
-        // 验证文件大小
-        const finalStats = fs.statSync(filepath);
-        console.log(`[UserGrowthBatchFragments] 文件大小: ${(finalStats.size / 1024 / 1024).toFixed(2)} MB`);
-
-        // 步骤5: 自动解压 zip 文件
-        const extractedPath = await this.extractZipFile(filepath);
-        return extractedPath;
-      } else {
-        throw new Error('下载文件不存在');
+      const taskModalResult = await this.handleTaskCreationSuccessModal(12000);
+      if (taskModalResult.action === 'detail' || taskModalResult.action === 'task-list') {
+        console.log(`[UserGrowthBatchFragments] 已处理任务创建成功弹窗，动作: ${taskModalResult.action}`);
+        return await this.waitForTaskDetailDownload(dramaName, dramaDir);
       }
+      if (taskModalResult.handled) {
+        console.log(`[UserGrowthBatchFragments] 已处理任务创建成功弹窗，动作: ${taskModalResult.action}`);
+      }
+
+      const delayedDownload = await this.waitForDownloadEvent(15000);
+      if (delayedDownload) {
+        console.log('[UserGrowthBatchFragments] 检测到延迟触发的浏览器下载链路');
+        return await this.persistPlaywrightDownload(delayedDownload, dramaName, dramaDir);
+      }
+
+      throw new Error('点击原始下载后，既未出现浏览器下载，也未出现任务详情弹窗');
     } catch (error) {
       console.error('[UserGrowthBatchFragments] 下载素材失败:', error);
       throw error;
@@ -1507,16 +2109,29 @@ class UserGrowthBatchFragmentsNode {
 
       // 调用批量处理方法
       const results = await userGrowthNode.processUserGrowthDramas(dramaNames, outputPath);
+      results.results = results.results || {};
+      results.succDramas = results.succDramas || [];
+      results.failedDramas = results.failedDramas || [];
+      results.originalCounts = results.originalCounts || {};
+      results.errors = results.errors || {};
+
+      for (const dramaName of dramaNames) {
+        if (!results.succDramas.includes(dramaName) && !results.failedDramas.includes(dramaName)) {
+          results.failedDramas.push(dramaName);
+          results.errors[dramaName] = '短剧原片未成功下载';
+        }
+      }
 
       return results;
     } catch (error) {
       console.error(`[UserGrowthBatchFragments] 墨攻平台批量处理失败:`, error);
-      // 返回空结果
-      const emptyResults = {};
-      dramaNames.forEach((name) => {
-        emptyResults[name] = [];
-      });
-      return emptyResults;
+      return {
+        results: {},
+        succDramas: [],
+        failedDramas: dramaNames,
+        originalCounts: {},
+        errors: Object.fromEntries(dramaNames.map((name) => [name, error.message || String(error)]))
+      };
     }
   }
 

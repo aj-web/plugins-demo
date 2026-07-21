@@ -134,6 +134,11 @@ const App = {
         // 根据任务模块调用不同的后端接口
         if (originalTask.module === TaskModule.REPLICATION) {
           eventType = 'replication-auto-start';
+          if (!originalTask.params.outputPath || !originalTask.params.dramaListFilePath) {
+            console.error('[App] 爆款复刻任务参数不完整:', originalTask.params);
+            showToast({ message: '任务参数不完整，无法重试', type: 'error', duration: 3000 });
+            return;
+          }
           // 从 params 中提取参数并转换为数组
           // 使用 JSON.parse(JSON.stringify()) 确保对象可序列化
           const exportConfig = originalTask.params.exportConfig 
@@ -144,10 +149,16 @@ const App = {
             originalTask.params.processCount,
             exportConfig,
             originalTask.params.dedupeExpireDays || 30,
-            originalTask.params.isScheduledTask || false
+            false,
+            originalTask.params.dramaListFilePath
           ];
         } else if (originalTask.module === TaskModule.ADX) {
           eventType = 'adx-auto-start';
+          if (!originalTask.params.outputPath) {
+            console.error('[App] 爆款扒产任务参数不完整:', originalTask.params);
+            showToast({ message: '任务参数不完整，无法重试', type: 'error', duration: 3000 });
+            return;
+          }
           // 从 params 中提取参数并转换为数组
           // 使用 JSON.parse(JSON.stringify()) 确保对象可序列化
           const exportConfig = originalTask.params.exportConfig 
@@ -155,10 +166,10 @@ const App = {
             : {};
           args = [
             originalTask.params.outputPath,
-            originalTask.params.processCount,
+            originalTask.params.videoCount || originalTask.params.processCount || 5,
             exportConfig,
             originalTask.params.dedupeExpireDays || 30,
-            originalTask.params.isScheduledTask || false
+            false
           ];
         } else if (originalTask.module === '爆款混剪') {
           eventType = 'mix-edit-auto-start';
@@ -202,19 +213,25 @@ const App = {
           } else {
             eventType = 'highlight-mix-edit-auto-start';
             // 验证必需参数
-            if (!originalTask.params.endFrameFolderPath || !originalTask.params.outputPath) {
+            if (!originalTask.params.dramaListFilePath || !originalTask.params.endFrameFolderPath || !originalTask.params.outputPath) {
               console.error('[App] 高光混剪任务参数不完整:', originalTask.params);
               showToast({ message: '任务参数不完整，无法重试', type: 'error', duration: 3000 });
               return;
             }
+            const stitchEpisodeCount = Number(originalTask.params.stitchEpisodeCount || 3);
+            if (![1, 2, 3].includes(stitchEpisodeCount)) {
+              showToast({ message: '拼接集数参数异常，无法重试', type: 'error', duration: 3000 });
+              return;
+            }
             // 从 params 中提取参数并转换为数组
             args = [
-              originalTask.params.dramaListFilePath || '',
+              originalTask.params.dramaListFilePath,
               originalTask.params.imageOverlayFolderPath || '',
               originalTask.params.endFrameFolderPath,
               originalTask.params.outputPath,
               originalTask.params.endRetentionSeconds || 10,
-              false // 重试时设置为非定时任务
+              false, // 重试时设置为非定时任务
+              stitchEpisodeCount
             ];
             console.log('[App] 高光混剪重试参数:', args);
           }

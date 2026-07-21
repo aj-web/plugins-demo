@@ -95,8 +95,8 @@ class MixEditNode {
         message: '',
         successCount: 0,
         failedCount: 0,
-        successDramas: new Set(),
-        failedDramas: new Set(),
+        successDramas: [],
+        failedDramas: [],
         details: {} // { dramaDir: { hookVideo: 'path', postVideo: 'path' } }
       },
       params: {
@@ -155,8 +155,8 @@ class MixEditNode {
           outputPath: finalOutputPath,
           successCount: results.successCount,
           failedCount: results.failedCount,
-          successDramas: [...successSet],
-          failedDramas: [...failedSet],
+          successDramas: Array.from(results.successDramas || []),
+          failedDramas: Array.from(results.failedDramas || []),
           details: results.details
         };
       } catch (error) {
@@ -208,8 +208,9 @@ class MixEditNode {
   }
 
   /**
-   * 扫描复刻片段视频文件（按新目录结构：日期/剧名/视频.mp4）
-   * 先按剧名排序取前 processCount 个剧名文件夹，再扫描这些剧下的所有视频
+   * 扫描复刻片段视频文件。
+   * 兼容旧结构：日期/剧名/视频.mp4
+   * 兼容新结构：日期/来源/剧名/视频.mp4（例如 墨攻、ADX）
    * @param {string} folderPath - 复刻片段日期文件夹路径（如 D:\ShortDrama\复刻片段\2026-03-31）
    * @param {number} processCount - 限制处理的剧目数量
    * @returns {Promise<Array>} 视频列表 [{ name: 文件名（不含扩展名）, ext: 扩展名, path: 完整路径, dramaDir: 剧名 }]
@@ -218,21 +219,46 @@ class MixEditNode {
     console.log('[MixEdit] 扫描剧名子文件夹:', folderPath, '，限制剧目数:', processCount);
 
     const allDirs = await fs.readdir(folderPath);
-    const dramaDirs = [];
+    const dramaEntries = [];
     for (const item of allDirs) {
-      const stat = await fs.stat(path.join(folderPath, item));
+      const itemPath = path.join(folderPath, item);
+      const stat = await fs.stat(itemPath);
       if (stat.isDirectory()) {
-        dramaDirs.push(item);
+        const childItems = await fs.readdir(itemPath);
+        const childDirs = [];
+        const directVideos = [];
+
+        for (const child of childItems) {
+          const childPath = path.join(itemPath, child);
+          const childStat = await fs.stat(childPath);
+          if (childStat.isDirectory()) {
+            childDirs.push(child);
+          } else if (/\.(mp4|avi|mov|mkv)$/i.test(child)) {
+            directVideos.push(child);
+          }
+        }
+
+        if (directVideos.length > 0) {
+          dramaEntries.push({ source: '', dramaDir: item, dramaPath: itemPath });
+        } else {
+          for (const childDir of childDirs) {
+            dramaEntries.push({
+              source: item,
+              dramaDir: `${item}_${childDir}`,
+              dramaPath: path.join(itemPath, childDir)
+            });
+          }
+        }
       }
     }
     // 按文件夹名称排序，取前 N 个剧
-    dramaDirs.sort();
-    const selectedDramas = dramaDirs.slice(0, processCount);
-    console.log(`[MixEdit] 共 ${dramaDirs.length} 个剧目，选中前 ${selectedDramas.length} 个:`, selectedDramas);
+    dramaEntries.sort((a, b) => a.dramaDir.localeCompare(b.dramaDir, 'zh-Hans-CN'));
+    const selectedDramas = dramaEntries.slice(0, processCount);
+    console.log(`[MixEdit] 共 ${dramaEntries.length} 个剧目，选中前 ${selectedDramas.length} 个:`, selectedDramas.map((item) => item.dramaDir));
 
     const allVideoFiles = [];
-    for (const dramaDir of selectedDramas) {
-      const dramaPath = path.join(folderPath, dramaDir);
+    for (const entry of selectedDramas) {
+      const dramaPath = entry.dramaPath;
       const files = await fs.readdir(dramaPath);
       for (const file of files) {
         if (/\.(mp4|avi|mov|mkv)$/i.test(file)) {
@@ -240,7 +266,7 @@ class MixEditNode {
             name: path.parse(file).name,
             ext: path.extname(file),
             path: path.join(dramaPath, file),
-            dramaDir: dramaDir
+            dramaDir: entry.dramaDir
           });
         }
       }
@@ -442,5 +468,3 @@ class MixEditNode {
 }
 
 module.exports = { MixEditNode };
-
-

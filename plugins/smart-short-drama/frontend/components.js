@@ -63,6 +63,7 @@ export const ReadinessPanel = {
     const hasDetails = (item) => {
       // 如果有 details 对象，就显示查看详情按钮（即使列表为空）
       if (item.details) return true;
+      if (Array.isArray(item.folderPaths) && item.folderPaths.length > 0) return true;
       // 或者有文件夹路径
       if (item.folderPath) return true;
       return false;
@@ -123,7 +124,37 @@ export const ReadinessPanel = {
                   ? h('tr', { class: 'bg-gray-50/30 animate-fade-in shadow-inner' }, [
                       h('td', { colspan: 4, class: 'p-0' }, [
                         h('div', { class: 'p-6 max-w-5xl mx-auto' }, [
-                          item.folderPath
+                          Array.isArray(item.folderPaths) && item.folderPaths.length > 0
+                            ? h(
+                                'div',
+                                { class: 'mb-4 space-y-2' },
+                                item.folderPaths.map((source, idx) =>
+                                  h('div', { key: idx, class: 'bg-white border border-secondary rounded-lg p-3 flex items-center justify-between shadow-sm' }, [
+                                    h('div', { class: 'flex items-center gap-2 text-textSecondary overflow-hidden' }, [
+                                      h(IconComponents.FolderOpen, { class: 'w-4 h-4 flex-shrink-0 text-primary' }),
+                                      h('span', { class: 'text-xs font-mono truncate max-w-md', title: source.path }, `${source.label || '本地源'}: ${source.path}`)
+                                    ]),
+                                    h(
+                                      'button',
+                                      {
+                                        onClick: async () => {
+                                          try {
+                                            await invokeIpc('open-folder', source.path);
+                                            console.log('[ReadinessPanel] 打开文件夹:', source.path);
+                                          } catch (error) {
+                                            console.error('[ReadinessPanel] 打开文件夹失败:', error);
+                                            console.error('[ReadinessPanel] 错误详情:', error.message);
+                                          }
+                                        },
+                                        class:
+                                          'flex items-center gap-1.5 px-3 py-1.5 bg-primary/5 text-primary hover:bg-primary/10 rounded border border-primary/20 transition-colors text-xs font-medium whitespace-nowrap'
+                                      },
+                                      [h(IconComponents.FolderOpen, { class: 'w-3.5 h-3.5' }), '打开文件夹']
+                                    )
+                                  ])
+                                )
+                              )
+                            : item.folderPath
                             ? h('div', { class: 'mb-4 bg-white border border-secondary rounded-lg p-3 flex items-center justify-between shadow-sm' }, [
                                 h('div', { class: 'flex items-center gap-2 text-textSecondary overflow-hidden' }, [
                                   h(IconComponents.FolderOpen, { class: 'w-4 h-4 flex-shrink-0 text-primary' }),

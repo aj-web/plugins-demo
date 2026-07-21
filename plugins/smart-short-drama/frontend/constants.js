@@ -36,28 +36,14 @@ export const ADX_READINESS = [];
 
 export const REPLICATION_READINESS = [
   {
-    id: 'qiancang',
-    name: '千沧数据平台',
-    status: 'ready',
-    readyTime: '08:35:12',
+    id: 'dramaList',
+    name: '剧目列表 Excel',
+    status: 'not_ready',
+    readyTime: '--:--:--',
+    folderPath: '',
     details: {
-      groups: [
-        {
-          title: '平台接口与数据状态',
-          items: [
-            { content: '数据API链接正常', status: 'ready' },
-            { content: '昨日跑量数据已同步', status: 'ready' }
-          ]
-        },
-        {
-          title: '待复刻剧目清单 (千沧提取)',
-          items: [
-            { content: '重生之龙王赘婿', status: 'ready' },
-            { content: '霸道总裁爱上我', status: 'ready' },
-            { content: '都市传说', status: 'ready' }
-          ]
-        }
-      ]
+      readyList: [],
+      missingList: ['未上传剧目列表 Excel']
     }
   },
   {

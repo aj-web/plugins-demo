@@ -120,7 +120,7 @@ class VideoDedupService {
 
   /**
    * 分析视频（查重去重）
-   * @param {string} videoFolderPath - 待分析视频文件夹路径（ByteGrowth 片段）
+   * @param {string} videoFolderPath - 待分析跑量片段文件夹路径
    * @param {string} seriesName - 剧集名称（用于过滤）
    * @param {string} outputPath - 结果输出路径
    */
@@ -319,15 +319,15 @@ class VideoDedupService {
   /**
    * 完整流程：导入 + 分析
    * @param {string} userGrowthPath - UserGrowth 全量视频路径（用于建立指纹库）
-   * @param {string} byteGrowthPath - ByteGrowth 片段视频路径（用于查重分析）
+   * @param {string} fragmentPath - 跑量片段视频路径（用于查重分析）
    * @param {string} seriesName - 剧集名称
    * @param {string} outputPath - 结果输出路径
    */
-  async processDeduplication(userGrowthPath, byteGrowthPath, seriesName, outputPath) {
+  async processDeduplication(userGrowthPath, fragmentPath, seriesName, outputPath) {
     console.log('[VideoDedupService] ========== 开始视频去重流程 ==========');
     console.log(`[VideoDedupService] 剧集名称: ${seriesName}`);
     console.log(`[VideoDedupService] 全量视频路径: ${userGrowthPath}`);
-    console.log(`[VideoDedupService] 片段视频路径: ${byteGrowthPath}`);
+    console.log(`[VideoDedupService] 片段视频路径: ${fragmentPath}`);
     console.log(`[VideoDedupService] 输出路径: ${outputPath}`);
 
     try {
@@ -348,7 +348,7 @@ class VideoDedupService {
       }
 
       // 4. 分析片段视频（查重去重）
-      const analyzeResult = await this.analyzeVideos(byteGrowthPath, seriesName, outputPath);
+      const analyzeResult = await this.analyzeVideos(fragmentPath, seriesName, outputPath);
       if (!analyzeResult.success) {
         throw new Error(`分析视频失败: ${analyzeResult.error}`);
       }
